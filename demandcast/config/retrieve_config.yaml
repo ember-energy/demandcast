@@ -10,7 +10,7 @@
 # - gridded_gdp_ppp,
 # - gridded_weather,
 # - temperature.
-variable: gdp_ppp_per_capita
+variable: temperature
 
 # OPTIONAL - REQUIRED for electricity_demand variable.
 # The acronym of the data source as defined in the retrieval
@@ -33,11 +33,11 @@ year:
 
 # OPTIONAL.
 # Start year for a range of years of data to be retrieved.
-start_year:
+start_year: 2020
 
 # OPTIONAL.
 # End year for a range of years of data to be retrieved.
-end_year:
+end_year: 2025
 
 # OPTIONAL.
 # Scenario of the data to be retrieved.
@@ -50,4 +50,4 @@ weather_variable: temperature
 
 # OPTIONAL.
 # The climate model for the weather data to be retrieved.
-climate_model:
+climate_model: 

@@ -3,7 +3,7 @@
 # REQUIRED.
 # The target use for which the data is being assembled. It can be
 # 'training' or 'forecasting'.
-target_use: training
+target_use: forecasting
 
 # OPTIONAL.
 # The path to the yaml file containing the list of codes of the
@@ -12,11 +12,11 @@ file:
 
 # OPTIONAL.
 # Start year for a range of years of data to be assembled.
-start_year:
+start_year: 2025
 
 # OPTIONAL.
 # End year for a range of years of data to be assembled.
-end_year:
+end_year: 2045
 
 # OPTIONAL.
 # Selected scenario for annual electricity demand per capita.
@@ -24,11 +24,11 @@ scenario_for_annual_electricity_demand_per_capita:
 
 # OPTIONAL.
 # Selected scenario for GDP PPP per capita.
-scenario_for_gdp_ppp_per_capita:
+scenario_for_gdp_ppp_per_capita: 
 
 # OPTIONAL.
 # Selected scenario for population.
-scenario_for_population:
+scenario_for_population: 
 
 # OPTIONAL.
 # Selected scenario for temperature.

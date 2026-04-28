@@ -6,7 +6,7 @@ reserve_testing_set: true
 
 # REQUIRED.
 # Whether to use a validation set during training.
-use_validation_set: false
+use_validation_set: true
 
 # OPTIONAL.
 # The path to the assembled data to be used for training.
