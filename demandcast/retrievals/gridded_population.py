@@ -90,22 +90,14 @@ def _download_future_gridded_population(
     downloaded_data_directory: str, scenario: str
 ) -> None:
     """
-    Download future population data from Figshare.
-
-    Parameters
-    ----------
-    downloaded_data_directory : str
-        The directory where the population data will be saved.
-    scenario : str
-        The scenario of the population data to be downloaded.
+    Extract future population data from manually downloaded local zip files.
     """
     assert scenario in ["SSP1", "SSP2", "SSP3", "SSP4", "SSP5"], (
         "ssp must be one of the following: ['SSP1', 'SSP2', 'SSP3', "
         "'SSP4', 'SSP5']."
     )
 
-    # Define the folder name for the population data for the specified
-    # scenario.
+    # Define the folder name for the population data for the specified scenario.
     folder_name = os.path.join(
         downloaded_data_directory,
         scenario,
@@ -113,30 +105,23 @@ def _download_future_gridded_population(
 
     if not os.path.exists(folder_name):
         logging.info(
-            "Downloading global gridded population data from Figshare for "
+            "Extracting global gridded population data from local archive for "
             f"{scenario}."
         )
-        # Define the URL of the population data.
-        match scenario:
-            case "SSP1":
-                url = "https://figshare.com/ndownloader/files/34829160"
-            case "SSP2":
-                url = "https://figshare.com/ndownloader/files/34829370"
-            case "SSP3":
-                url = "https://figshare.com/ndownloader/files/45894312"
-            case "SSP4":
-                url = "https://figshare.com/ndownloader/files/34829385"
-            case "SSP5":
-                url = "https://figshare.com/ndownloader/files/34829391"
+        
+        # Define where the script will look for your manually downloaded zip files
+        manual_downloads_folder = os.path.join(downloaded_data_directory, "manual_zips")
+        zip_file_path = os.path.join(manual_downloads_folder, f"{scenario}.zip")
 
-        # Fetch the data from the URL.
-        response = requests.get(url)
+        # Ensure the file actually exists before trying to open it
+        if not os.path.exists(zip_file_path):
+            raise FileNotFoundError(
+                f"Missing manual download: {zip_file_path}. "
+                f"Please download the file for {scenario} and place it in the 'manual_zips' folder."
+            )
 
-        # Check if the request was successful.
-        response.raise_for_status()
-
-        # Extract all population data from the response.
-        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        # Extract all population data from the local zip file.
+        with zipfile.ZipFile(zip_file_path, "r") as archive:
             archive.extractall(path=downloaded_data_directory)
 
         # Fix the folder name if necessary.
@@ -163,13 +148,68 @@ def _download_future_gridded_population(
 
         logging.info(
             f"Global gridded population data for {scenario} has been "
-            "downloaded successfully."
+            "extracted successfully."
         )
     else:
         logging.info(
             f"Global gridded population data for {scenario} already exists. "
-            "Skipping download."
+            "Skipping extraction."
         )
+
+    #     # Define the URL of the population data.
+    #     match scenario:
+    #         case "SSP1":
+    #             url = "https://figshare.com/ndownloader/files/34829160"
+    #         case "SSP2":
+    #             url = "https://figshare.com/ndownloader/files/34829370"
+    #         case "SSP3":
+    #             url = "https://figshare.com/ndownloader/files/45894312"
+    #         case "SSP4":
+    #             url = "https://figshare.com/ndownloader/files/34829385"
+    #         case "SSP5":
+    #             url = "https://figshare.com/ndownloader/files/34829391"
+
+    #     # Fetch the data from the URL.
+    #     response = requests.get(url)
+
+    #     # Check if the request was successful.
+    #     response.raise_for_status()
+
+    #     # Extract all population data from the response.
+    #     with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+    #         archive.extractall(path=downloaded_data_directory)
+
+    #     # Fix the folder name if necessary.
+    #     if scenario == "SSP1":
+    #         os.rename(
+    #             os.path.join(downloaded_data_directory, "SPP1"),
+    #             os.path.join(downloaded_data_directory, "SSP1"),
+    #         )
+    #     elif scenario == "SSP2":
+    #         os.rename(
+    #             os.path.join(downloaded_data_directory, "SPP2"),
+    #             os.path.join(downloaded_data_directory, "SSP2"),
+    #         )
+    #     elif scenario == "SSP4":
+    #         os.rename(
+    #             os.path.join(downloaded_data_directory, "SPP4"),
+    #             os.path.join(downloaded_data_directory, "SSP4"),
+    #         )
+    #     elif scenario == "SSP5":
+    #         os.rename(
+    #             os.path.join(downloaded_data_directory, "SPP5"),
+    #             os.path.join(downloaded_data_directory, "SSP5"),
+    #         )
+
+    #     logging.info(
+    #         f"Global gridded population data for {scenario} has been "
+    #         "downloaded successfully."
+    #     )
+    # else:
+    #     logging.info(
+    #         f"Global gridded population data for {scenario} already exists. "
+    #         "Skipping download."
+    #     )
 
 
 def _read_population_dataset(
