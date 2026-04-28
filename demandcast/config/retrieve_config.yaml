@@ -37,11 +37,11 @@ start_year: 2020
 
 # OPTIONAL.
 # End year for a range of years of data to be retrieved.
-end_year: 2025
+end_year: 2030
 
 # OPTIONAL.
 # Scenario of the data to be retrieved.
-scenario:
+scenario: SSP1-1.9
 
 # OPTIONAL.
 # Variable of the weather data to be retrieved (only "temperature" is
@@ -50,4 +50,5 @@ weather_variable: temperature
 
 # OPTIONAL.
 # The climate model for the weather data to be retrieved.
-climate_model: 
+# For temperature, it is recommended to specify the climate model, or else the processing time is painful
+climate_model: CAMS-CSM1-0

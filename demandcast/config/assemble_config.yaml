@@ -12,15 +12,15 @@ file:
 
 # OPTIONAL.
 # Start year for a range of years of data to be assembled.
-start_year: 2025
+start_year: 2020
 
 # OPTIONAL.
 # End year for a range of years of data to be assembled.
-end_year: 2045
+end_year: 2025
 
 # OPTIONAL.
 # Selected scenario for annual electricity demand per capita.
-scenario_for_annual_electricity_demand_per_capita:
+scenario_for_annual_electricity_demand_per_capita: 
 
 # OPTIONAL.
 # Selected scenario for GDP PPP per capita.
@@ -32,8 +32,8 @@ scenario_for_population:
 
 # OPTIONAL.
 # Selected scenario for temperature.
-scenario_for_temperature:
+scenario_for_temperature: 
 
 # OPTIONAL.
 # Selected climate model for temperature.
-climate_model_for_temperature:
+climate_model_for_temperature: 

@@ -477,11 +477,12 @@ def _get_temperature_in_most_populous_cells(
     elif climate_model:
         # Climate model data has a time coordinate type of
         # cftime.DatetimeNoLeap. Convert it to datetime64.
-        temperature_data["time"] = (
-            temperature_data["time"]
-            .to_index()
-            .to_datetimeindex(time_unit="ns")
-        )
+        if hasattr(temperature_data.indexes["time"], "to_datetimeindex"):
+            temperature_data["time"] = (
+                temperature_data["time"]
+                .to_index()
+                .to_datetimeindex(time_unit="ns")
+            )
 
     # Load the population data.
     population_data = _load_gridded_population_data(
