@@ -18,6 +18,7 @@ import pandas
 import utils.config
 import utils.ml
 from pydantic import BaseModel, ValidationError
+import pandas as pd
 
 
 def _read_and_check_configuration() -> BaseModel:
@@ -164,6 +165,14 @@ def run_forecasting(
 
         # Make predictions.
         predictions = ml_models.xgboost.predict(model, prepared_dataset)
+
+        #Fractional normalization 
+        #Force the hourly fractions to sum to exactly 1.0 for each specific year 
+        #This prevents the model from predicting more than 100% of annual demand
+        #utc_time = pd.to_datetime(prepared_dataset['time']).dt.tz_localize('UTC')
+        #local_time =  utc_time.dt.tz_convert('Asia/Singapore')
+        #years = local_time.dt.year.values 
+        #predictions = predictions.groupby(years).transform(lambda x: x / x.sum())
 
         logging.info("Forecasting completed successfully.")
 

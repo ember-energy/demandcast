@@ -124,9 +124,20 @@ def get_initialized_model() -> XGBRegressor:
         random_state=config.random_state,
         enable_categorical=config.enable_categorical,
         eval_metric=config.evaluation_metric,
+
+        max_depth = 10, 
+        learning_rate = 0.03, 
+        n_estimators = 2000, 
+
+        subsample = 0.7, 
+        colsample_bytree = 0.7, 
+        min_child_weight = 1, 
+        reg_lambda = 0,
+
+        early_stopping_rounds=50,
     )
 
-    logging.info("XGBoost model initialized with configuration.")
+    logging.info("XGBoost model initialized with configuration and hardcoded complexity.")
 
     return xgb_model
 
@@ -154,22 +165,31 @@ def train(
     # Get an initialized model.
     xgb_model = get_initialized_model()
 
+    # Scale up the target (as the fraction of annual total is too insignificant)
+    scale_factor = 1000000
+    y_train = prepared_dataset['training']['target'] * scale_factor 
+
+    #Force the model to start at the exact correct mathematical height 
+    mean_target = float(y_train.mean())
+    xgb_model.set_params(base_score = mean_target)
+
     # Prepare evaluation set if the validation dataset is provided.
     eval_set = None
     if "validation" in prepared_dataset:
+        y_val = prepared_dataset['validation']['target'] * scale_factor
         eval_set = [
             (
                 prepared_dataset["validation"]["features"],
-                prepared_dataset["validation"]["target"],
+                y_val,
             )
         ]
 
     # Train the model.
     xgb_model.fit(
         prepared_dataset["training"]["features"],
-        prepared_dataset["training"]["target"],
+        y_train,
         eval_set=eval_set,
-        verbose=False,
+        verbose=True,
     )
 
     logging.info("XGBoost model training completed.")
@@ -205,11 +225,14 @@ def predict(
     """
     logging.info("Making predictions with the trained XGBoost model.")
 
+    #Reverse the scaling 
+    scale_factor = 1000000
     if "features" in prepared_dataset:
         # The prepared_dataset is a single dataset, not split into
         # training/validation/testing.
         # Make predictions and return them.
-        return pandas.Series(xgb_model.predict(prepared_dataset["features"]))
+        preds = xgb_model.predict(prepared_dataset['features']) / scale_factor
+        return pandas.Series(preds)
 
     else:
         # Initialize predictions dictionary to store training,
@@ -218,7 +241,7 @@ def predict(
 
         for split_name, data in prepared_dataset.items():
             # Make predictions for the current split.
-            preds = xgb_model.predict(data["features"])
+            preds = xgb_model.predict(data["features"]) / scale_factor
 
             predictions[split_name] = pandas.Series(preds)
 
