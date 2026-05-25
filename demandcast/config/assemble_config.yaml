@@ -11,12 +11,12 @@ target_use: training
 file:
 
 # OPTIONAL.
-# Start yesar for a range of years of data to be assembled.
-start_year: 2020
+# Start year for a range of years of data to be assembled.
+start_year: 2022
 
 # OPTIONAL.
 # End year for a range of years of data to be assembled.
-end_year: 2023
+end_year: 2024
 
 # OPTIONAL.
 # Selected scenario for annual electricity demand per capita.
@@ -32,8 +32,8 @@ scenario_for_population:
 
 # OPTIONAL.
 # Selected scenario for temperature.
-scenario_for_temperature: SSP1-2.5
+scenario_for_temperature:
 
 # OPTIONAL.
 # Selected climate model for temperature.
-climate_model_for_temperature: CAMS-CSM1-0
+climate_model_for_temperature: 

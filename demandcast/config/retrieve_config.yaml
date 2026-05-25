@@ -15,12 +15,12 @@ variable: temperature
 # OPTIONAL - REQUIRED for electricity_demand variable.
 # The acronym of the data source as defined in the retrieval
 # modules (example: "entsoe").
-electricity_data_source: "ngcp"
+electricity_data_source: 
 
 # OPTIONAL.
 # The ISO Alpha-3 code (example: "FRA") or a combination of ISO
 # Alpha-3 code and subdivision code (example: "USA_CAL").
-code: "PHL"
+code: "MYS"
 
 # OPTIONAL.
 # The path to the yaml file containing the list of codes of the
