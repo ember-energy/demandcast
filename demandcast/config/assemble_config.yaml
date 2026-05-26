@@ -3,24 +3,24 @@
 # REQUIRED.
 # The target use for which the data is being assembled. It can be
 # 'training' or 'forecasting'.
-target_use: training 
+target_use: forecasting 
 
 # OPTIONAL.
 # The path to the yaml file containing the list of codes of the
 # countries and subdivisions of interest.
-file:
+file: "D:/Modelling/demandcast/demandcast/config/target_countries_config.yaml"
 
 # OPTIONAL.
 # Start year for a range of years of data to be assembled.
-start_year: 2022
+start_year: 2024
 
 # OPTIONAL.
 # End year for a range of years of data to be assembled.
-end_year: 2024
+end_year: 2025
 
 # OPTIONAL.
 # Selected scenario for annual electricity demand per capita.
-scenario_for_annual_electricity_demand_per_capita:
+scenario_for_annual_electricity_demand_per_capita: 
 
 # OPTIONAL.
 # Selected scenario for GDP PPP per capita.
@@ -32,7 +32,7 @@ scenario_for_population:
 
 # OPTIONAL.
 # Selected scenario for temperature.
-scenario_for_temperature:
+scenario_for_temperature: 
 
 # OPTIONAL.
 # Selected climate model for temperature.
