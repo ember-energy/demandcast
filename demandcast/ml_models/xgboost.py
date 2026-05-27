@@ -38,6 +38,14 @@ def _read_configuration() -> BaseModel:
         random_state: int = 42
         enable_categorical: Optional[bool] = True
         evaluation_metric: Optional[str] = "mape"
+        max_depth: Optional[int] = 5
+        learning_rate: Optional[float] = 0.03
+        n_estimators: Optional[int] = 2000
+        subsample: Optional[float] = 0.7
+        colsample_bytree: Optional[float] = 0.7 
+        min_child_weight: Optional[int] = 1
+        reg_lambda: Optional[int] = 1
+        early_stopping_rounds: Optional[int] = 50
 
     # Read the configuration.
     config_path = os.path.join(
@@ -125,16 +133,16 @@ def get_initialized_model() -> XGBRegressor:
         enable_categorical=config.enable_categorical,
         eval_metric=config.evaluation_metric,
 
-        max_depth = 10, 
-        learning_rate = 0.03, 
-        n_estimators = 2000, 
+        max_depth = config.max_depth, 
+        learning_rate = config.learning_rate, 
+        n_estimators = config.n_estimators, 
 
-        subsample = 0.7, 
-        colsample_bytree = 0.7, 
-        min_child_weight = 1, 
-        reg_lambda = 0,
+        subsample = config.subsample, 
+        colsample_bytree = config.colsample_bytree, 
+        min_child_weight = config.min_child_weight, 
+        reg_lambda = config.reg_lambda,
 
-        early_stopping_rounds=50,
+        early_stopping_rounds=config.early_stopping_rounds,
     )
 
     logging.info("XGBoost model initialized with configuration and hardcoded complexity.")

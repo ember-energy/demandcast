@@ -11,3 +11,14 @@ enable_categorical: true
 # REQUIRED.
 # Evaluation metric for model training and validation.
 evaluation_metric: "mape"
+
+#XGBoost Model Hyperparameters 
+#OPTIONAL
+max_depth: 6
+learning_rate: 0.03
+n_estimators: 2000
+subsample: 0.7
+colsample_bytree: 0.7
+min_child_weight: 1
+reg_lambda: 2
+early_stopping_rounds: 50

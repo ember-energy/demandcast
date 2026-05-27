@@ -64,7 +64,8 @@ def _read_and_check_configuration() -> BaseModel:
 
 def _construct_output_dataset(
     prepared_dataset: dict[str, pandas.Series | pandas.DataFrame],
-    predictions: pandas.Series,
+    raw_predictions: pandas.Series,
+    normalized_predictions: pandas.Series
 ) -> pandas.DataFrame:
     """
     Construct the output dataset containing forecasts.
@@ -74,8 +75,10 @@ def _construct_output_dataset(
     prepared_dataset : dict[str, pandas.Series | pandas.DataFrame]
         The prepared dataset containing features and other relevant
         data.
-    predictions : pandas.Series
-        The predicted values from the model.
+    raw_predictions : pandas.Series
+        The predicted values from the model, before normalization.
+    normalized_predictions: pandas.Series 
+        The normalized values, such that the sum of them equals to 1 for each local year
 
     Returns
     -------
@@ -84,7 +87,7 @@ def _construct_output_dataset(
     """
     # Scale the prodictions to MW using the annual electricity demand
     # per capita (kWh) and population.
-    predictions = predictions * prepared_dataset["scaling_factor"] / 1000
+    forecasted_demand = raw_predictions * prepared_dataset["scaling_factor"] / 1000
 
     # Construct the output dataset.
     output_dataset = prepared_dataset["time"].copy()
@@ -98,10 +101,18 @@ def _construct_output_dataset(
         output_dataset = pandas.concat(
             [output_dataset, prepared_dataset["others"]], axis=1
         )
+
     output_dataset = pandas.concat(
-        [output_dataset, predictions.rename("Forecast load (MW)")], axis=1
+        [output_dataset, raw_predictions.rename("Raw forecast load fraction (%)")], axis=1
     )
 
+    output_dataset = pandas.concat(
+       [output_dataset, normalized_predictions.rename("Normalized forecast load fraction (%)")], axis=1
+    )
+
+    output_dataset = pandas.concat(
+        [output_dataset, forecasted_demand.rename('Forecast Load (MW)')],axis= 1
+    )
     return output_dataset
 
 
@@ -163,36 +174,32 @@ def run_forecasting(
                 "The features used in the prepared dataset do not match "
                 "those used during model training."
             )
-
+        
         # Make predictions.
         raw_predictions = ml_models.xgboost.predict(model, prepared_dataset)
 
-        safe_predictions = np.clip(raw_predictions, a_min=0.000001, a_max=None)
-        predictions_series = pd.Series(safe_predictions)
-        
         #Fractional normalization 
         #Force the hourly fractions to sum to exactly 1.0 for each specific year 
         #This prevents the model from predicting more than 100% of annual demand
-        utc_time = pd.to_datetime(prepared_dataset['time']).dt.tz_localize('UTC')
-        #local_time =  utc_time.dt.tz_convert('Asia/Singapore')
-        years = utc_time.dt.year.values 
-
-        def safe_normalize(x):
-            year_sum = x.sum()
-            logging.debug(f"Raw sum for year group before normalization: {year_sum}")
-            return x / year_sum
-        
-        predictions = predictions_series.groupby(years).transform(safe_normalize).values
-
+        local_years = prepared_dataset['others']['Local year'].values 
+        logging.info('Fractional normalization taking place. This to make sure the hourly fractions to sum exactly 1.0 for each local year')
+        normalized_predictions = raw_predictions.groupby(local_years).transform(lambda x: x / x.sum())
         logging.info("Forecasting completed successfully.")
 
     else:
         raise ValueError(f"Unsupported algorithm: {algorithm}")
 
     # Construct the output dataset.
+    #output_dataset = _construct_output_dataset(
+    #    prepared_dataset,
+    #    predictions,
+    #)
+
+    # Construct the output dataset 
     output_dataset = _construct_output_dataset(
         prepared_dataset,
-        predictions,
+        raw_predictions,
+        normalized_predictions,
     )
 
     # Save the output dataset.
@@ -201,7 +208,7 @@ def run_forecasting(
         output_dataset,
         os.path.basename(trained_model_path).split(".")[0],
         os.path.basename(data_path).split(".")[0],
-        "all",
+        "all_raw_normalized",
     )
 
 
