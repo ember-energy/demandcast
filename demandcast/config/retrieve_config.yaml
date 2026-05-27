@@ -20,7 +20,7 @@ electricity_data_source:
 # OPTIONAL.
 # The ISO Alpha-3 code (example: "FRA") or a combination of ISO
 # Alpha-3 code and subdivision code (example: "USA_CAL").
-code: "MYS"
+code: "IDN"
 
 # OPTIONAL.
 # The path to the yaml file containing the list of codes of the
@@ -37,13 +37,17 @@ start_year: 2020
 
 # OPTIONAL.
 # End year for a range of years of data to be retrieved.
-end_year: 2030
+end_year: 2040
 
 # OPTIONAL.
 # Scenario of the data to be retrieved.
-scenario: SSP1-2.6 
-#Scenario SPP2-4.5 is the "moderate" sustainability and income growth. 
-#Scenario SPP1-2.6 is the sustainability pathway, but less aggressive than SSP1-1.9
+# Specify for future years, or else it will download all the available scenarios
+# it is painful to run everything
+scenario: SSP1-2.6
+#Scenario SPP1-2.6 is the sustainability pathway, but less aggressive than SSP1-1.9. Setting this as default scenario
+#Scenario SSP1-26 for annual_electricity_demand_per_capita
+#Scenario SSP1 for population, gdp/ppp per capita
+#Scenario SSP1-2.6 for gridded_weather
 #Details about the scenarios: https://www.climatehubs.usda.gov/hubs/northwest/topic/what-are-climate-model-phases-and-scenarios#:~:text=How%20do%20shared%20socioeconomic%20pathways,Description
 
 # OPTIONAL.
