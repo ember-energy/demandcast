@@ -1,4 +1,5 @@
 # Folders used for local data storage
+demandcast/analysis/
 demandcast/data/
 demandcast/logs/
 demandcast/ml_models/mapes/

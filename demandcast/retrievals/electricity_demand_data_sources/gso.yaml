@@ -2,4 +2,9 @@ entities:
   - country_name: Malaysia
     country_code: MYS
     start_date: 2020-01-01  
-    end_date: today    
+    end_date: today
+  - country_name: Indonesia
+    country_code: IDN
+    start_date: 2020-01-01
+    end_date: today
+  
