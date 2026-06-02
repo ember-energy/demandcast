@@ -2,7 +2,7 @@
 
 # REQUIRED.
 # Whether to reserve a set of data for later testing.
-reserve_testing_set: true
+reserve_testing_set: false
 
 # REQUIRED.
 # Whether to use a validation set during training.

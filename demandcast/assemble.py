@@ -491,6 +491,9 @@ def _load_data(
         # Append to the result list.
         result_data.append(entity_data)
 
+    if not result_data:
+        raise ValueError(f"No {variable} data could be loaded for the requested entities: {entity_codes}. Please ensure the data files exist.")
+
     # Concatenate all entity dataframes.
     result_data = dask.dataframe.concat(result_data)
 
