@@ -20,30 +20,30 @@ electricity_data_source:
 # OPTIONAL.
 # The ISO Alpha-3 code (example: "FRA") or a combination of ISO
 # Alpha-3 code and subdivision code (example: "USA_CAL").
-code: "IDN"
+code: 
 
 # OPTIONAL.
 # The path to the yaml file containing the list of codes of the
-# countries and subdivisions of interest.
-file:
+# countries and subdivisions of interest."
+file: "D:/Modelling/demandcast/demandcast/config/target_countries_config.yaml"
 
 # OPTIONAL.
 # The year of the data to be retrieved.
-year:
+year: 2026
 
 # OPTIONAL.
 # Start year for a range of years of data to be retrieved.
-start_year: 2020
+start_year: 
 
 # OPTIONAL.
 # End year for a range of years of data to be retrieved.
-end_year: 2040
+end_year: 
 
 # OPTIONAL.
 # Scenario of the data to be retrieved.
 # Specify for future years, or else it will download all the available scenarios
 # it is painful to run everything
-scenario: SSP1-2.6
+scenario: SSP2-4.5
 #Scenario SPP1-2.6 is the sustainability pathway, but less aggressive than SSP1-1.9. Setting this as default scenario
 #Scenario SSP1-26 for annual_electricity_demand_per_capita
 #Scenario SSP1 for population, gdp/ppp per capita
@@ -58,4 +58,4 @@ weather_variable: temperature
 # OPTIONAL.
 # The climate model for the weather data to be retrieved.
 # For temperature, it is recommended to specify the climate model, or else the processing time is painful
-climate_model: CAMS-CSM1-0
+climate_model: CNRM-ESM2-1

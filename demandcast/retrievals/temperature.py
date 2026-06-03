@@ -718,7 +718,7 @@ def run_data_retrieval(
     )
 
     # Define the available years for the future weather data.
-    available_future_years = list(range(pandas.Timestamp.now().year, 2101))
+    available_future_years = list(range(pandas.Timestamp.now().year-1, 2101))
 
     # Get the available scenarios for the weather data.
     available_scenarios_for_model = get_available_scenarios_for_model()

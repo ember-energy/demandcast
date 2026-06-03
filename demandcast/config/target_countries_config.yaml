@@ -1,2 +1,9 @@
 entities:
-  - country_code: THA
+  # - country_code: BRN
+  # - country_code: MMR 
+  # - country_code: IDN
+  # - country_code: LAO
+  # - country_code: PHL
+  # - country_code: SGP  
+  #- country_code: THA
+  - country_code: VNM
