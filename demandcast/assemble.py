@@ -911,10 +911,21 @@ def run_data_assemply(
     ]
     os.makedirs(assembled_data_folder, exist_ok=True)
 
+    #Create a sub-folder to keep the daily runs records
+    daily_folder = os.path.join(assembled_data_folder, datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d"))
+    os.makedirs(daily_folder, exist_ok=True)    
+
     # Construct the output file path.
+    unique_entities = list(merged_dataset['Entity code'].unique().compute())
+
+    if len(unique_entities) == 1: 
+        entity_suffix = f'_{unique_entities[0]}'
+    else:
+        entity_suffix = ""
+
     output_path = os.path.join(
-        assembled_data_folder,
-        f"assembled_data_for_{target_use}_"
+        daily_folder,
+        f"assembled_data_for_{target_use}{entity_suffix}_"
         f"{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}",
     )
 
