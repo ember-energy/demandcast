@@ -477,11 +477,12 @@ def _get_temperature_in_most_populous_cells(
     elif climate_model:
         # Climate model data has a time coordinate type of
         # cftime.DatetimeNoLeap. Convert it to datetime64.
-        temperature_data["time"] = (
-            temperature_data["time"]
-            .to_index()
-            .to_datetimeindex(time_unit="ns")
-        )
+        if hasattr(temperature_data.indexes["time"], "to_datetimeindex"):
+            temperature_data["time"] = (
+                temperature_data["time"]
+                .to_index()
+                .to_datetimeindex(time_unit="ns")
+            )
 
     # Load the population data.
     population_data = _load_gridded_population_data(
@@ -713,11 +714,11 @@ def run_data_retrieval(
     # Historical data is available from 1940 but it is not necessary to
     # go that far back for our purposes.
     available_historical_years = list(
-        range(1990, pandas.Timestamp.now().year + 1)
+        range(1990, pandas.Timestamp.now().year)
     )
 
     # Define the available years for the future weather data.
-    available_future_years = list(range(pandas.Timestamp.now().year, 2101))
+    available_future_years = list(range(pandas.Timestamp.now().year-1, 2101))
 
     # Get the available scenarios for the weather data.
     available_scenarios_for_model = get_available_scenarios_for_model()

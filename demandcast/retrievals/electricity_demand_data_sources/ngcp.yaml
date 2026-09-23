@@ -2,4 +2,25 @@ entities:
   - country_name: Philippines
     country_code: PHL
     start_date: 2013-01-01
-    end_date: 2024-12-31
+    end_date: today
+  - subdivision_name: Luzon
+    subdivision_code: LU
+    country_name: Philippines
+    country_code: PHL
+    start_date: 2013-01-01
+    end_date: today
+    time_zone: Asia/Manila
+  - subdivision_name: Visayas
+    subdivision_code: VI
+    country_name: Philippines
+    country_code: PHL
+    start_date: 2013-01-01
+    end_date: today
+    time_zone: Asia/Manila
+  - subdivision_name: Mindanao
+    subdivision_code: MI
+    country_name: Philippines
+    country_code: PHL
+    start_date: 2013-01-01
+    end_date: today
+    time_zone: Asia/Manila

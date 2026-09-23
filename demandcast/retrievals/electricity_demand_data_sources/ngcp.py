@@ -9,6 +9,10 @@ Description:
     Philippines (NGCP). The data is downloaded from Jan 1, 2013 to Dec
     31, 2024. The data is retrieved all at once.
 
+    The data can be retrieved for the whole country ("PHL"), where the
+    three main grids are aggregated, or for a single grid: Luzon
+    ("PHL_LU"), Visayas ("PHL_VI") or Mindanao ("PHL_MI").
+
     Source: https://www.ngcp.ph/operations#operations
 """
 
@@ -16,6 +20,35 @@ import logging
 
 import pandas
 import utils.fetcher
+
+# Map each code to the main regions (Excel sheets) that make it up.
+REGIONS_OF_CODE = {
+    "PHL": ["LUZON", "VISAYAS", "MINDANAO"],
+    "PHL_LU": ["LUZON"],
+    "PHL_VI": ["VISAYAS"],
+    "PHL_MI": ["MINDANAO"],
+}
+
+
+def _check_code(code: str) -> None:
+    """
+    Check that the code is supported by this data source.
+
+    Parameters
+    ----------
+    code : str
+        The code of the country or subdivision.
+
+    Raises
+    ------
+    ValueError
+        If the code is not supported.
+    """
+    if code not in REGIONS_OF_CODE:
+        raise ValueError(
+            f"Code {code} is not supported by NGCP. Supported codes are: "
+            f"{', '.join(REGIONS_OF_CODE)}."
+        )
 
 
 def redistribute() -> bool:
@@ -32,13 +65,19 @@ def redistribute() -> bool:
     return False
 
 
-def get_available_requests() -> None:
+def get_available_requests(code: str) -> None:
     """
     Get the available requests.
 
     This function retrieves the available requests for the electricity
     demand data for Philippines.
+
+    Parameters
+    ----------
+    code : str
+        The code of the country or subdivision.
     """
+    _check_code(code)
     logging.debug("The data is retrieved all at once.")
 
 
@@ -55,12 +94,18 @@ def get_url() -> str:
     return "https://www.ngcp.ph/Attachment-Uploads/operations/Hourly%20Demand%20per%20Grid.xlsx"
 
 
-def download_and_extract_data() -> pandas.Series:
+def download_and_extract_data(code: str) -> pandas.Series:
     """
     Download and extract electricity demand data.
 
     This function downloads and extracts the electricity demand data
-    for Philippines.
+    for Philippines or one of its main grids.
+
+    Parameters
+    ----------
+    code : str
+        The code of the country ("PHL") or subdivision ("PHL_LU",
+        "PHL_VI" or "PHL_MI").
 
     Returns
     -------
@@ -70,8 +115,11 @@ def download_and_extract_data() -> pandas.Series:
     Raises
     ------
     ValueError
-        If the extracted data is not a pandas DataFrame.
+        If the extracted data is not a pandas DataFrame, or if the code
+        is not supported.
     """
+    _check_code(code)
+
     # Get the URL of the electricity demand data.
     url = get_url()
 
@@ -84,8 +132,8 @@ def download_and_extract_data() -> pandas.Series:
             "expected a pandas ExcelFile."
         )
 
-    # Define the main regions in the Philippines.
-    regions = ["LUZON", "VISAYAS", "MINDANAO"]
+    # Get the main regions to retrieve for the given code.
+    regions = REGIONS_OF_CODE[code]
 
     # Extract the sheet names from the Excel file that refer to the
     # main regions: Luzon, Visayas, and Mindanao. The other 5 sheets in
@@ -97,11 +145,13 @@ def download_and_extract_data() -> pandas.Series:
         if sheet.split(" ")[0].upper() in regions
     }
 
-    if len(sheet_names) < 3:
+    missing_regions = [
+        region for region in regions if region not in sheet_names
+    ]
+    if missing_regions:
         raise ValueError(
-            "The extracted Excel file from NGCP does not contain all "
-            "the required sheets for the main regions: Luzon, Visayas, "
-            "and Mindanao."
+            "The extracted Excel file from NGCP does not contain the "
+            f"required sheets for: {', '.join(missing_regions)}."
         )
 
     # Define the number of rows to skip for each region's sheet.
@@ -152,7 +202,7 @@ def download_and_extract_data() -> pandas.Series:
         dataset = dataset[["Datetime", "Demand"]]
         all_data.append(dataset)
 
-    # Combine and aggregate data across all regions.
+    # Combine and aggregate data across the selected regions.
     combined = pandas.concat(all_data)
     combined = combined.groupby("Datetime").sum().sort_index()
 

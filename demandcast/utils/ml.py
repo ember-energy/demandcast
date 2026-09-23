@@ -11,7 +11,7 @@ Description:
 import logging
 import os
 from typing import Optional
-
+import datetime
 import pandas
 from pydantic import BaseModel, ValidationError
 
@@ -152,31 +152,28 @@ def get_assemble_data_path(data_path: str | None) -> str:
 
     # If no data path is provided, find the latest assembled data file.
     if data_path is None:
-        # List all files in the assembled data folder.
-        data_paths = os.listdir(assembled_data_folder)
-
         # Initialize a variable to hold the latest datetime and data
         # path.
         data_path = None
         datetime = "00000000_000000"
-        for path in data_paths:
-            # Extract datetime from the file name.
-            datetime_of_file = path[
-                -len(datetime) - len(".parquet") : -len(".parquet")
-            ]
-            if (
-                path.startswith("assembled_data")
-                and path.endswith(".parquet")
-                and datetime_of_file > datetime
-            ):
-                datetime = datetime_of_file
-                data_path = os.path.join(assembled_data_folder, path)
+
+        for root, _,files in os.walk(assembled_data_folder):
+            for file in files:
+                #Check if the file matches our assembled data formate 
+                if file.startswith("assembled_data") and file.endswith(".parquet"):
+                    #Extract datetime from the file name
+                    datetime_of_file = file[-len(datetime) - len(".parquet") : -len(".parquet")]
+                    if datetime_of_file > datetime:
+                        datetime = datetime_of_file
+                        data_path = os.path.join(root, file)
+    
         if data_path is None:
             raise FileNotFoundError(
-                f"No assembled data files found in '{assembled_data_folder}'."
+                f"No assembled data files found in '{assembled_data_folder}' or its subdirectories."
             )
-
-    logging.info(f"Using assembled data file: {data_path}")
+        
+    logging.info(f'Using assembled data file:{data_path}')
+    print(f'Using assembled data file:{data_path}')
 
     return data_path
 
@@ -494,9 +491,16 @@ def save_results(
     # Get the folder where to save the model results.
     results_folder = utils.config.read_folders_structure()[f"ml_{case}_folder"]
 
+    #Create a sub-folder to save daily run records 
+    daily_folder = os.path.join(
+        results_folder, 
+        datetime.datetime.now().strftime('%Y%m%d')
+    )
+    os.makedirs(daily_folder, exist_ok=True)
+
     # Construct the model results folder path.
     model_results_folder = os.path.join(
-        results_folder,
+        daily_folder,
         f"with_{trained_model_name}",
         f"using_{assembled_data_file_name}",
     )

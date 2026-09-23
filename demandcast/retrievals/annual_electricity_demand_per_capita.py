@@ -353,10 +353,10 @@ def run_data_retrieval(
                     # Save the electricity demand per capita data to
                     # parquet and CSV files.
                     selected_future_electricity_demand_per_capita.to_frame().to_parquet(
-                        f"{file_path_without_ext}_{scenario}.parquet"
+                        f"{file_path_without_ext}_{scenario.replace('-', '_')}.parquet"
                     )
                     selected_future_electricity_demand_per_capita.to_csv(
-                        f"{file_path_without_ext}_{scenario}.csv",
+                        f"{file_path_without_ext}_{scenario.replace('-', '_')}.csv",
                     )
 
                     logging.info(
