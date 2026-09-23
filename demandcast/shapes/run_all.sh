@@ -5,6 +5,7 @@ scripts="cenace \
 eia \
 kansaitd \
 neso \
+ngcp \
 ons \
 tepco"
 

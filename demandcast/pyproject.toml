@@ -26,6 +26,7 @@ dependencies = [
     "pycountry>=24.6.1",
     "pycountry-convert>=0.7.2",
     "pydantic>=2.12.5",
+    "pypdf>=6.19.0",
     "pytest>=9.0.3",
     "python-dotenv>=1.2.2",
     "pytz>=2025.1",

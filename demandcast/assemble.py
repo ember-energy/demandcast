@@ -9,7 +9,6 @@ Description:
 """
 
 import datetime
-import glob
 import logging
 import os
 from functools import reduce
@@ -250,9 +249,8 @@ def _get_files_to_load(
         Dictionary mapping entity codes to list of file paths to load.
     """
     # Get the folder containing the data.
-    data_folder = utils.config.read_folders_structure()[
-        f"{variable.replace(' ', '_').lower()}_folder"
-    ]
+    folder_key = f"{variable.replace(' ', '_').lower()}_folder"
+    data_folder = utils.config.read_folders_structure()[folder_key]
 
     if variable == "electricity demand":
         # For electricity demand, find the folder with the most recent
@@ -296,10 +294,11 @@ def _get_files_to_load(
         file_pattern += ".parquet"
 
         if variable == "temperature":
-            # Add all matching files for temperature.
-            files_to_load[entity_code] = [
-                f for f in glob.glob(os.path.join(data_folder, file_pattern))
-            ]
+            # Add all matching files for temperature, using the most
+            # recent version of each file across the dated subfolders.
+            files_to_load[entity_code] = utils.config.find_latest_files(
+                folder_key, file_pattern
+            )
 
             if not files_to_load[entity_code]:
                 logging.warning(
@@ -316,10 +315,17 @@ def _get_files_to_load(
                     )
                     + "."
                 )
-        else:
-            # Add a single file for other variables.
+        elif variable == "electricity demand":
+            # Add a single file from the most recent dated folder.
             files_to_load[entity_code] = [
                 os.path.join(data_folder, file_pattern)
+            ]
+        else:
+            # Add the most recent version of the file across the dated
+            # subfolders for other variables.
+            files_to_load[entity_code] = [
+                utils.config.find_latest_file(folder_key, file_pattern)
+                or os.path.join(data_folder, file_pattern)
             ]
 
     return files_to_load
