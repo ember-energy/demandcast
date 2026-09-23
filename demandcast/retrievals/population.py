@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 """
 License: AGPL-3.0.
@@ -8,7 +9,10 @@ Description:
     population data the World Bank and future population data from the
     IAMC scenarios for the countries of interest. For subdivisions, the
     population data is calculated by aggregating gridded population
-    data. The population data is saved into CSV and Parquet files.
+    data. If national data is available for the parent country, the
+    gridded population of the subdivision is scaled so that the
+    subdivisions add up to the national total. The population data is
+    saved into CSV and Parquet files.
 """
 
 import logging
@@ -38,6 +42,63 @@ def get_available_scenarios() -> list[str]:
     return ["SSP1", "SSP2", "SSP3", "SSP4", "SSP5"]
 
 
+def _get_share_of_national_gridded_population(
+    code: str,
+    subdivision_population: pandas.Series,
+    gridded_data_arguments: tuple,
+) -> pandas.Series:
+    """
+    Get the share of a subdivision in the national gridded population.
+
+    Aggregated gridded data can under- or overestimate the population
+    of a country (e.g., because of coastal grid cells only partially
+    within the shape). To correct for this, the share of the
+    subdivision in the gridded population of its parent country is
+    multiplied by the national population.
+
+    NOTE: 
+    - Years after 2020: The gridded data stops at 2020, so the 2020 regional shares are applied to later year's WB total.
+    Before this, those years stayed flat at 2020 values. 
+    - Future: the same share method, scaled to the IIASA projection for the same scenario.
+
+
+    Parameters
+    ----------
+    code : str
+        The code of the subdivision of interest.
+    subdivision_population : pandas.Series
+        The gridded population of the subdivision.
+    gridded_data_arguments : tuple
+        The arguments passed to get_total_value_from_gridded_data after
+        the variable and the code.
+
+    Returns
+    -------
+    pandas.Series
+        The share of the subdivision in the gridded population of its
+        parent country.
+    """
+    country_code = code.split("_")[0]
+
+    # Get the gridded population of the parent country.
+    national_gridded_population = (
+        utils.geospatial.get_total_value_from_gridded_data(
+            "population", country_code, *gridded_data_arguments
+        )
+    )
+
+    logging.info(
+        f"Scaling the gridded population of {code} to the national "
+        f"population of {country_code}."
+    )
+
+    # Calculate and return the share of the subdivision in the gridded
+    # population of the parent country.
+    return subdivision_population / national_gridded_population.reindex(
+        subdivision_population.index
+    )
+
+
 def _extract_historical_population(
     code: str,
     global_historical_population: pandas.DataFrame,
@@ -56,19 +117,95 @@ def _extract_historical_population(
     else:
         # Extract the historical population for the country or
         # subdivision by aggregating gridded data.
+        gridded_data_arguments = (
+            used_historical_years,
+            available_historical_years_of_gridded_data,
+        )
         historical_population = (
             utils.geospatial.get_total_value_from_gridded_data(
-                "population",
-                code,
-                used_historical_years,
-                available_historical_years_of_gridded_data,
+                "population", code, *gridded_data_arguments
             )
         )
+
+        # If the code is a subdivision and the World Bank data is
+        # available for its parent country, scale the gridded
+        # population to the national population. The share of the
+        # used (gridded) year is applied to the national population of
+        # the requested year, so that the subdivisions follow the
+        # national trend after the last year of gridded data.
+        country_code = code.split("_")[0]
+        if "_" in code and country_code in global_historical_population.index:
+            share = _get_share_of_national_gridded_population(
+                code, historical_population, gridded_data_arguments
+            )
+            national_population = (
+                global_historical_population.loc[country_code].dropna()
+            )
+            return share.reindex(used_historical_years).set_axis(
+                requested_historical_years
+            ) * national_population.reindex(
+                requested_historical_years, method="ffill"
+            )
 
     # Map the requested historical years to the used (available)
     # historical years.
     return (historical_population.reindex(used_historical_years)).set_axis(
         requested_historical_years,
+    )
+
+
+def get_historical_population(
+    code: str,
+    years: list[int],
+    global_historical_population: pandas.DataFrame | None = None,
+) -> pandas.Series:
+    """
+    Get the historical population of a country or subdivision.
+
+    This function returns the historical population for the given
+    years using the same method as the population retrieval: World
+    Bank data for countries, and gridded data scaled to the national
+    population for subdivisions.
+
+    Parameters
+    ----------
+    code : str
+        The code of the country or subdivision of interest.
+    years : list[int]
+        The years of interest.
+    global_historical_population : pandas.DataFrame | None, optional
+        The global historical population data from the World Bank. If
+        None, it is downloaded.
+
+    Returns
+    -------
+    pandas.Series
+        The historical population for the given years.
+    """
+    if global_historical_population is None:
+        global_historical_population = world_bank.download("population")
+
+    # Define the available years for gridded population data.
+    available_historical_years_of_gridded_data = list(range(2000, 2021, 5))
+
+    # Map the years to the closest available year of gridded data.
+    first_year = available_historical_years_of_gridded_data[0]
+    last_year = available_historical_years_of_gridded_data[-1]
+    used_historical_years = [
+        min(max(year, first_year), last_year) for year in years
+    ]
+
+    # For countries in the World Bank data, the used years are the
+    # requested years.
+    if code in global_historical_population.index:
+        used_historical_years = years
+
+    return _extract_historical_population(
+        code,
+        global_historical_population,
+        years,
+        used_historical_years,
+        available_historical_years_of_gridded_data,
     )
 
 
@@ -115,14 +252,30 @@ def _extract_future_population(
     else:
         # Extract the future population for the country or subdivision
         # by aggregating gridded data.
-        future_population = utils.geospatial.get_total_value_from_gridded_data(
-            "population",
-            code,
+        gridded_data_arguments = (
             future_years,
             available_future_years_of_gridded_data,
             available_historical_years_of_gridded_data[-1],
             scenario,
         )
+        future_population = utils.geospatial.get_total_value_from_gridded_data(
+            "population", code, *gridded_data_arguments
+        )
+
+        # If the code is a subdivision and the IIASA data is available
+        # for its parent country, scale the gridded population to the
+        # national population.
+        country_code = code.split("_")[0]
+        if "_" in code and country_code in global_future_population.index:
+            share = _get_share_of_national_gridded_population(
+                code, future_population, gridded_data_arguments
+            )
+            national_population = iiasa.extract_and_interpolate(
+                global_future_population, country_code, scenario
+            )
+            future_population = share * national_population.reindex(
+                share.index
+            )
 
     return future_population
 
@@ -165,10 +318,10 @@ def run_data_retrieval(
         retrieved.
     """
     # Get the directory to store the population data.
-    result_directory = utils.config.read_folders_structure()[
+    # Files are saved in a subfolder named after the current date.
+    result_directory = utils.config.get_dated_folder(
         "population_folder"
-    ]
-    os.makedirs(result_directory, exist_ok=True)
+    )
 
     # Download the historical population data.
     global_historical_population = world_bank.download("population")

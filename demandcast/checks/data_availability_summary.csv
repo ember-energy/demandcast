@@ -331,6 +331,9 @@ PAN,Panama,True,1960.0,2024.0,True,1990.0,2023.0,True,1980.0,2024.0,True,True,Tr
 PCN,Pitcairn,False,,,False,,,False,,,False,False,False,False
 PER,Peru,True,1960.0,2024.0,True,1990.0,2024.0,True,1980.0,2024.0,True,True,True,True
 PHL,Philippines,True,1960.0,2024.0,True,1990.0,2024.0,True,1980.0,2024.0,True,True,True,True
+PHL_LU,Subdivision of Philippines,False,,,True,1990.0,2024.0,True,1980.0,2024.0,False,True,True,True
+PHL_MI,Subdivision of Philippines,False,,,True,1990.0,2024.0,True,1980.0,2024.0,False,True,True,True
+PHL_VI,Subdivision of Philippines,False,,,True,1990.0,2024.0,True,1980.0,2024.0,False,True,True,True
 PLW,Palau,True,1960.0,2024.0,False,,,True,1990.0,2024.0,False,False,False,False
 PNG,Papua New Guinea,True,1960.0,2024.0,True,2000.0,2023.0,True,1980.0,2024.0,True,True,True,True
 POL,Poland,True,1960.0,2024.0,True,1990.0,2024.0,True,1980.0,2024.0,True,True,True,True

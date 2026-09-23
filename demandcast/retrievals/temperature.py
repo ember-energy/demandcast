@@ -699,10 +699,10 @@ def run_data_retrieval(
         The scenario of the weather data.
     """
     # Create a directory to store the weather data.
-    result_directory = utils.config.read_folders_structure()[
+    # Files are saved in a subfolder named after the current date.
+    result_directory = utils.config.get_dated_folder(
         "temperature_folder"
-    ]
-    os.makedirs(result_directory, exist_ok=True)
+    )
 
     # Get the list of codes of the countries and subdivisions of
     # interest.

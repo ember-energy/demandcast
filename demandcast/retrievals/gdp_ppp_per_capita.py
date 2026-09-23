@@ -9,7 +9,9 @@ Description:
     Monetary Fund (IMF), as well as to calculate future GDP PPP per
     capita based on growth rates from the IAMC scenarios. The data is
     extracted for specified countries and subdivisions and saved into
-    CSV and Parquet files.
+    CSV and Parquet files. For subdivisions, the national GDP PPP per
+    capita is scaled by the ratio between the gridded GDP PPP per capita
+    of the subdivision and that of its parent country.
 """
 
 import logging
@@ -142,6 +144,76 @@ def _get_gdp_ppp_per_capita_from_gridded_data(
     return gdp_ppp / population
 
 
+def _get_relative_gdp_ppp_per_capita(
+    code: str,
+    iso_alpha_3_code: str,
+    selected_years: list[int],
+    available_years_of_gridded_data: list[int],
+    last_available_historical_years_of_gridded_data: int | None = None,
+    scenario: str | None = None,
+) -> pandas.Series:
+    """
+    Get the relative GDP PPP per capita of a subdivision.
+
+    This function calculates the ratio between the GDP PPP per capita
+    of a subdivision and that of its parent country, both obtained by
+    aggregating gridded data. Multiplying the national GDP PPP per
+    capita by this ratio gives the GDP PPP per capita of the
+    subdivision.
+
+    Parameters
+    ----------
+    code : str
+        The code of the subdivision of interest.
+    iso_alpha_3_code : str
+        The ISO Alpha-3 code of the country to which the subdivision
+        belongs.
+    selected_years : list[int]
+        The years for which the ratio is to be calculated.
+    available_years_of_gridded_data : list[int]
+        The years for which gridded GDP PPP and population data are
+        available.
+    last_available_historical_years_of_gridded_data :
+        int | None, optional
+        The last available historical year for gridded data.
+    scenario : str | None, optional
+        The scenario for which the ratio is to be calculated. If None,
+        historical data is used.
+
+    Returns
+    -------
+    pandas.Series
+        The ratio between the GDP PPP per capita of the subdivision and
+        that of its parent country.
+    """
+    logging.info(
+        f"Scaling the GDP PPP per capita of {iso_alpha_3_code} to {code} "
+        "using gridded data."
+    )
+
+    gridded_data_arguments = (
+        selected_years,
+        available_years_of_gridded_data,
+        last_available_historical_years_of_gridded_data,
+        scenario,
+    )
+
+    subdivision_gdp_ppp_per_capita = (
+        _get_gdp_ppp_per_capita_from_gridded_data(
+            code, *gridded_data_arguments
+        )
+    )
+    national_gdp_ppp_per_capita = _get_gdp_ppp_per_capita_from_gridded_data(
+        iso_alpha_3_code, *gridded_data_arguments
+    )
+
+    return subdivision_gdp_ppp_per_capita / (
+        national_gdp_ppp_per_capita.reindex(
+            subdivision_gdp_ppp_per_capita.index
+        )
+    )
+
+
 def _extract_historical_gdp_ppp_per_capita(
     code: str,
     iso_alpha_3_code: str,
@@ -185,6 +257,32 @@ def _extract_historical_gdp_ppp_per_capita(
         historical_gdp_ppp_per_capita = (
             global_historical_gdp_ppp_per_capita.loc[iso_alpha_3_code]
         ).dropna()
+
+        if code != iso_alpha_3_code:
+            # For subdivisions, scale the national GDP PPP per capita by
+            # the relative GDP PPP per capita of the subdivision. Years
+            # outside the range of the gridded data use the ratio of the
+            # closest available year.
+            first_year = available_historical_years_of_gridded_data[0]
+            last_year = available_historical_years_of_gridded_data[-1]
+            gridded_years = [
+                min(max(y, first_year), last_year)
+                for y in used_historical_years
+            ]
+            ratio = _get_relative_gdp_ppp_per_capita(
+                code,
+                iso_alpha_3_code,
+                sorted(set(gridded_years)),
+                available_historical_years_of_gridded_data,
+            )
+
+            return pandas.Series(
+                historical_gdp_ppp_per_capita.reindex(
+                    used_historical_years
+                ).to_numpy()
+                * ratio.reindex(gridded_years).to_numpy(),
+                index=requested_historical_years,
+            )
     else:
         # Interpolate the historical GDP PPP per capita from
         # gridded data.
@@ -257,6 +355,21 @@ def _extract_future_gdp_ppp_per_capita(
             iso_alpha_3_code,
             scenario,
         )
+
+        if code != iso_alpha_3_code:
+            # For subdivisions, scale the national GDP PPP per capita by
+            # the relative GDP PPP per capita of the subdivision.
+            ratio = _get_relative_gdp_ppp_per_capita(
+                code,
+                iso_alpha_3_code,
+                future_years,
+                available_future_years_of_gridded_data,
+                available_historical_years_of_gridded_data[-1],
+                scenario,
+            )
+            future_gdp_ppp_per_capita = ratio * (
+                future_gdp_ppp_per_capita.reindex(ratio.index)
+            )
     else:
         # Extract the future GDP PPP per capita by aggregating gridded
         # data.
@@ -307,10 +420,10 @@ def run_data_retrieval(
         The scenario of the GDP PPP per capita data to be retrieved.
     """
     # Get the directory to store the GDP PPP per capita data.
-    result_directory = utils.config.read_folders_structure()[
+    # Files are saved in a subfolder named after the current date.
+    result_directory = utils.config.get_dated_folder(
         "gdp_ppp_per_capita_folder"
-    ]
-    os.makedirs(result_directory, exist_ok=True)
+    )
 
     # Get the historical GDP PPP per capita.
     global_historical_gdp_ppp_per_capita = get_historical_data()

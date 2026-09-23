@@ -10,6 +10,12 @@ Description:
     based on growth rates from the IAMC scenarios. The electricity
     demand data is extracted for the countries and subdivisions of
     interest and saved into CSV and Parquet files.
+
+    For subdivisions with regional electricity consumption data (the
+    grids of the Philippines, from the DOE), the historical annual
+    electricity demand per capita is calculated by dividing the
+    regional electricity consumption by the regional population. For
+    other subdivisions, the national value is used.
 """
 
 import logging
@@ -22,6 +28,8 @@ import utils.scenarios
 import utils.time_series
 from tqdm import tqdm
 
+import retrievals.population
+from retrievals.socio_economic_data_sources import doe_philippines
 import retrievals.socio_economic_data_sources.ember as ember
 import retrievals.socio_economic_data_sources.iiasa as iiasa
 import retrievals.socio_economic_data_sources.world_bank as world_bank
@@ -98,6 +106,63 @@ def get_historical_data() -> pandas.DataFrame:
     ).fillna(ember_electricity_demand_per_capita)
 
 
+def get_regional_codes() -> list[str]:
+    """
+    (MANUAL SOURCE FOR PHL SUBNATIONALS)
+    Get the codes of the subdivisions with regional data.
+
+    Returns
+    -------
+    list[str]
+        The codes of the subdivisions for which regional electricity
+        consumption data is available.
+    """
+    return [code for code in doe_philippines.get_codes() if "_" in code]
+
+
+def get_regional_historical_data(
+    regional_electricity_consumption: pandas.DataFrame,
+    code: str,
+    global_historical_population: pandas.DataFrame | None = None,
+) -> pandas.Series:
+    """
+    Get the historical electricity demand per capita of a subdivision.
+
+    This function divides the regional electricity consumption by the
+    regional population of the subdivision.
+
+    Parameters
+    ----------
+    regional_electricity_consumption : pandas.DataFrame
+        The regional electricity consumption in MWh, with the codes as
+        index and the years as columns.
+    code : str
+        The code of the subdivision of interest.
+    global_historical_population : pandas.DataFrame | None, optional
+        The global historical population data from the World Bank.
+
+    Returns
+    -------
+    pandas.Series
+        The historical electricity demand per capita in kWh.
+    """
+    # Get the electricity consumption of the subdivision.
+    electricity_consumption = regional_electricity_consumption.loc[
+        code
+    ].dropna()
+
+    # Get the population of the subdivision for the same years.
+    population = retrievals.population.get_historical_population(
+        code,
+        electricity_consumption.index.tolist(),
+        global_historical_population,
+    )
+
+    # Calculate the electricity demand per capita, converting MWh to
+    # kWh.
+    return (electricity_consumption * 1000 / population).dropna()
+
+
 def run_data_retrieval(
     code: str | None,
     file: str | None,
@@ -137,10 +202,10 @@ def run_data_retrieval(
     """
     # Get the directory to store the annual electricity demand per
     # capita data.
-    result_directory = utils.config.read_folders_structure()[
+    # Files are saved in a subfolder named after the current date.
+    result_directory = utils.config.get_dated_folder(
         "annual_electricity_demand_per_capita_folder"
-    ]
-    os.makedirs(result_directory, exist_ok=True)
+    )
 
     # Download the historical electricity demand per capita data.
     global_historical_electricity_demand_per_capita = get_historical_data()
@@ -159,6 +224,14 @@ def run_data_retrieval(
     # Get the available scenarios.
     available_scenarios = get_available_scenarios()
 
+    # If any subdivision has regional data, download the regional
+    # electricity consumption and the population data.
+    if set(codes) & set(get_regional_codes()):
+        regional_electricity_consumption = (
+            doe_philippines.download_electricity_consumption()
+        )
+        global_historical_population = world_bank.download("population")
+
     # Loop over the countries and subdivisions.
     for code in tqdm(codes, desc="Countries and subdivisions"):
         # Get the ISO Alpha-3 code of the country itself or the country
@@ -168,12 +241,26 @@ def run_data_retrieval(
         # Get the time zone of the country or subdivision.
         time_zone = utils.entities.get_time_zone(code)
 
-        # Extract the electricity data for the country.
-        historical_electricity_demand_per_capita = (
-            global_historical_electricity_demand_per_capita.loc[
-                iso_alpha_3_code
-            ]
-        ).dropna()
+        if code in get_regional_codes():
+            # Calculate the electricity demand per capita from the
+            # regional electricity consumption and population.
+            logging.info(
+                f"Using regional electricity consumption data for {code}."
+            )
+            historical_electricity_demand_per_capita = (
+                get_regional_historical_data(
+                    regional_electricity_consumption,
+                    code,
+                    global_historical_population,
+                )
+            )
+        else:
+            # Extract the electricity data for the country.
+            historical_electricity_demand_per_capita = (
+                global_historical_electricity_demand_per_capita.loc[
+                    iso_alpha_3_code
+                ]
+            ).dropna()
 
         # Get the years of available historical data.
         available_historical_years = (

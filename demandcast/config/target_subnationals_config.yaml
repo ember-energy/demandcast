@@ -1,0 +1,7 @@
+entities:
+  - country_code: PHL
+    subdivision_code: LU
+  - country_code: PHL
+    subdivision_code: VI
+  - country_code: PHL
+    subdivision_code: MI
