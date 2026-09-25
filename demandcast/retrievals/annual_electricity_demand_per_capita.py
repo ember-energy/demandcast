@@ -11,11 +11,12 @@ Description:
     demand data is extracted for the countries and subdivisions of
     interest and saved into CSV and Parquet files.
 
-    For subdivisions with regional electricity consumption data (the
+    For subdivisions with regional gross power generation data (the
     grids of the Philippines, from the DOE), the historical annual
     electricity demand per capita is calculated by dividing the
-    regional electricity consumption by the regional population. For
-    other subdivisions, the national value is used.
+    regional gross power generation by the regional population. For
+    the years before the regional data starts, and for other
+    subdivisions, the national value is used.
 """
 
 import logging
@@ -114,27 +115,27 @@ def get_regional_codes() -> list[str]:
     Returns
     -------
     list[str]
-        The codes of the subdivisions for which regional electricity
-        consumption data is available.
+        The codes of the subdivisions for which regional gross power
+        generation data is available.
     """
     return [code for code in doe_philippines.get_codes() if "_" in code]
 
 
 def get_regional_historical_data(
-    regional_electricity_consumption: pandas.DataFrame,
+    regional_gross_generation: pandas.DataFrame,
     code: str,
     global_historical_population: pandas.DataFrame | None = None,
 ) -> pandas.Series:
     """
     Get the historical electricity demand per capita of a subdivision.
 
-    This function divides the regional electricity consumption by the
+    This function divides the regional gross power generation by the
     regional population of the subdivision.
 
     Parameters
     ----------
-    regional_electricity_consumption : pandas.DataFrame
-        The regional electricity consumption in MWh, with the codes as
+    regional_gross_generation : pandas.DataFrame
+        The regional gross power generation in MWh, with the codes as
         index and the years as columns.
     code : str
         The code of the subdivision of interest.
@@ -146,21 +147,21 @@ def get_regional_historical_data(
     pandas.Series
         The historical electricity demand per capita in kWh.
     """
-    # Get the electricity consumption of the subdivision.
-    electricity_consumption = regional_electricity_consumption.loc[
+    # Get the gross power generation of the subdivision.
+    gross_generation = regional_gross_generation.loc[
         code
     ].dropna()
 
     # Get the population of the subdivision for the same years.
     population = retrievals.population.get_historical_population(
         code,
-        electricity_consumption.index.tolist(),
+        gross_generation.index.tolist(),
         global_historical_population,
     )
 
     # Calculate the electricity demand per capita, converting MWh to
     # kWh.
-    return (electricity_consumption * 1000 / population).dropna()
+    return (gross_generation * 1000 / population).dropna()
 
 
 def run_data_retrieval(
@@ -225,10 +226,10 @@ def run_data_retrieval(
     available_scenarios = get_available_scenarios()
 
     # If any subdivision has regional data, download the regional
-    # electricity consumption and the population data.
+    # gross power generation and the population data.
     if set(codes) & set(get_regional_codes()):
-        regional_electricity_consumption = (
-            doe_philippines.download_electricity_consumption()
+        regional_gross_generation = (
+            doe_philippines.download_gross_generation()
         )
         global_historical_population = world_bank.download("population")
 
@@ -241,26 +242,52 @@ def run_data_retrieval(
         # Get the time zone of the country or subdivision.
         time_zone = utils.entities.get_time_zone(code)
 
+        # Extract the electricity data for the country.
+        historical_electricity_demand_per_capita = (
+            global_historical_electricity_demand_per_capita.loc[
+                iso_alpha_3_code
+            ]
+        ).dropna()
+
         if code in get_regional_codes():
             # Calculate the electricity demand per capita from the
-            # regional electricity consumption and population.
+            # regional gross power generation and population.
             logging.info(
-                f"Using regional electricity consumption data for {code}."
+                f"Using regional gross power generation data for {code}."
             )
-            historical_electricity_demand_per_capita = (
+            regional_electricity_demand_per_capita = (
                 get_regional_historical_data(
-                    regional_electricity_consumption,
+                    regional_gross_generation,
                     code,
                     global_historical_population,
                 )
             )
-        else:
-            # Extract the electricity data for the country.
-            historical_electricity_demand_per_capita = (
-                global_historical_electricity_demand_per_capita.loc[
-                    iso_alpha_3_code
+
+            # For the years before the regional data starts, fall back
+            # to the national electricity demand per capita, scaled by
+            # the ratio between the regional and national values in the
+            # first year of the regional data to avoid a discontinuity.
+            first_regional_year = (
+                regional_electricity_demand_per_capita.index.min()
+            )
+            ratio = (
+                regional_electricity_demand_per_capita.loc[first_regional_year]
+                / historical_electricity_demand_per_capita.loc[
+                    first_regional_year
                 ]
-            ).dropna()
+            )
+            earlier_national_electricity_demand_per_capita = (
+                historical_electricity_demand_per_capita.loc[
+                    historical_electricity_demand_per_capita.index
+                    < first_regional_year
+                ]
+            )
+            historical_electricity_demand_per_capita = pandas.concat(
+                [
+                    earlier_national_electricity_demand_per_capita * ratio,
+                    regional_electricity_demand_per_capita,
+                ]
+            )
 
         # Get the years of available historical data.
         available_historical_years = (

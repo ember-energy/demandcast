@@ -176,8 +176,17 @@ def _load_gridded_temperature_data(
                 scenario=climate_scenario,
             )
 
-    # Read the temperature data.
-    temperature_data = xarray.open_mfdataset(temperature_data_file_paths)
+    # Read the temperature data. Each file is loaded into memory and
+    # closed immediately, because consecutive years share files and
+    # reopening a file that is still held open by a previous
+    # open_mfdataset crashes netCDF4/HDF5 (segmentation fault).
+    datasets = []
+    for file_path in temperature_data_file_paths:
+        with xarray.open_dataset(file_path) as dataset:
+            datasets.append(dataset.load())
+    temperature_data = xarray.combine_by_coords(
+        datasets, combine_attrs="override"
+    )
 
     # Extract the temperature variable.
     if "t2m" in temperature_data:
@@ -290,7 +299,10 @@ def _load_gridded_population_data(
         )
 
     # Read the population data.
-    population_data = xarray.open_dataarray(population_data_file_path)
+    # The file is loaded into memory and closed, as it is reopened for
+    # every year.
+    with xarray.open_dataarray(population_data_file_path) as data_array:
+        population_data = data_array.load()
 
     # Harmonize the population data and return it.
     return utils.geospatial.harmonize_coords(population_data)

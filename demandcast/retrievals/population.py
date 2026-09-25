@@ -11,13 +11,16 @@ Description:
     population data is calculated by aggregating gridded population
     data. If national data is available for the parent country, the
     gridded population of the subdivision is scaled so that the
-    subdivisions add up to the national total. The population data is
+    subdivisions add up to the national total. For the grids of the
+    Philippines, the shares of the subdivisions/regions are instead taken from
+    the census population reported by the PSA. The population data is
     saved into CSV and Parquet files.
 """
 
 import logging
 import os
 
+import numpy
 import pandas
 import utils.config
 import utils.entities
@@ -27,6 +30,7 @@ import utils.time_series
 from tqdm import tqdm
 
 import retrievals.socio_economic_data_sources.iiasa as iiasa
+import retrievals.socio_economic_data_sources.psa_philippines as psa_philippines
 import retrievals.socio_economic_data_sources.world_bank as world_bank
 
 
@@ -99,6 +103,45 @@ def _get_share_of_national_gridded_population(
     )
 
 
+def _get_share_of_national_census_population(
+    code: str, years: list[int]
+) -> pandas.Series:
+    """
+    Get the share of a subdivision in the national census population.
+
+    The shares of the census years are linearly interpolated for the
+    years between censuses. Years before the first census use the share
+    of the first census, and years after the last census use the share
+    of the last census.
+
+    Parameters
+    ----------
+    code : str
+        The code of the subdivision of interest.
+    years : list[int]
+        The years of interest.
+
+    Returns
+    -------
+    pandas.Series
+        The share of the subdivision in the census population of its
+        parent country, with the years as index.
+    """
+    logging.info(
+        f"Scaling the national population to {code} using census shares."
+    )
+
+    # Get the share of the subdivision in the census years.
+    census_shares = psa_philippines.read_population_shares().loc[code]
+
+    # Interpolate the shares for the years of interest. numpy.interp
+    # holds the first and last values outside the census years.
+    return pandas.Series(
+        numpy.interp(years, census_shares.index, census_shares.to_numpy()),
+        index=years,
+    )
+
+
 def _extract_historical_population(
     code: str,
     global_historical_population: pandas.DataFrame,
@@ -106,6 +149,8 @@ def _extract_historical_population(
     used_historical_years: list[int],
     available_historical_years_of_gridded_data: list[int],
 ):
+    country_code = code.split("_")[0]
+
     # Check if code is in the historical population data. If not, it
     # means that it is a subdivision or a country not included in the
     # World Bank data.
@@ -114,6 +159,22 @@ def _extract_historical_population(
         historical_population = (
             global_historical_population.loc[code]
         ).dropna()
+    elif (
+        code in psa_philippines.get_codes()
+        and country_code in global_historical_population.index
+    ):
+        # For subdivisions with census data, scale the national
+        # population by the census share of the subdivision in the
+        # requested year.
+        share = _get_share_of_national_census_population(
+            code, requested_historical_years
+        )
+        national_population = (
+            global_historical_population.loc[country_code].dropna()
+        )
+        return share * national_population.reindex(
+            requested_historical_years, method="ffill"
+        )
     else:
         # Extract the historical population for the country or
         # subdivision by aggregating gridded data.
@@ -133,7 +194,6 @@ def _extract_historical_population(
         # used (gridded) year is applied to the national population of
         # the requested year, so that the subdivisions follow the
         # national trend after the last year of gridded data.
-        country_code = code.split("_")[0]
         if "_" in code and country_code in global_historical_population.index:
             share = _get_share_of_national_gridded_population(
                 code, historical_population, gridded_data_arguments
@@ -240,6 +300,8 @@ def _extract_future_population(
     pandas.Series
         The future population for the country or subdivision.
     """
+    country_code = code.split("_")[0]
+
     # Check if code is in the future population data. If so, it means
     # that it is an ISO Alpha-3 code of a country.
     if code in global_future_population.index:
@@ -249,6 +311,18 @@ def _extract_future_population(
             code,
             scenario,
         )
+    elif (
+        code in psa_philippines.get_codes()
+        and country_code in global_future_population.index
+    ):
+        # For subdivisions with census data, scale the national
+        # population by the census share of the subdivision, which is
+        # held at the value of the last census.
+        share = _get_share_of_national_census_population(code, future_years)
+        national_population = iiasa.extract_and_interpolate(
+            global_future_population, country_code, scenario
+        )
+        future_population = share * national_population.reindex(share.index)
     else:
         # Extract the future population for the country or subdivision
         # by aggregating gridded data.
@@ -265,7 +339,6 @@ def _extract_future_population(
         # If the code is a subdivision and the IIASA data is available
         # for its parent country, scale the gridded population to the
         # national population.
-        country_code = code.split("_")[0]
         if "_" in code and country_code in global_future_population.index:
             share = _get_share_of_national_gridded_population(
                 code, future_population, gridded_data_arguments

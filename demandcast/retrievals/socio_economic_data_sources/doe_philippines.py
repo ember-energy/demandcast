@@ -4,17 +4,20 @@ License: AGPL-3.0.
 
 Description:
 
-    This module is used to download the historical annual electricity
-    consumption of the three main grids of the Philippines (Luzon,
+    This module is used to download the historical annual gross power
+    generation of the three main grids of the Philippines (Luzon,
     Visayas, and Mindanao) from the Department of Energy (DOE) of the
-    Philippines. The data is published in a PDF file, which is parsed
-    to extract the "Electricity Consumption" row (electricity sales,
-    own-use, and system loss) of each grid. The unit is MWh.
+    Philippines. The data is published in the summary PDF file of the
+    power statistics, which is parsed to extract the "Gross Power
+    Generation per Grid in GWh" table. The values are converted to MWh.
 
-    Note that, according to the DOE, off-grid consumption is not
-    included starting 2021.
+    Note that, according to the DOE, gross power generation includes
+    grid-connected, embedded, and off-grid generators, but off-grid
+    generation is excluded starting 2021.
 
-    Source: https://doe.gov.ph/articles/group/energy-statistics?category=Electricity&display_type=Card
+    In the DOE's Power Statistics, the gross power generation is equal to the electricity consumption. So in this script we use the gross generation interchangably with the electricity demand
+
+    Source: https://prod-cms.doe.gov.ph/documents/d/guest/annex-1_summary-electric-consumption-system-demand-gross-generation-installed-and-dependable-capacity-2003-2025-pdf
 """
 
 import io
@@ -24,16 +27,20 @@ import pandas
 import pypdf
 import requests
 
-# Define the URL of the PDF file with the electricity consumption per
+# Define the URL of the PDF file with the summary of the power
+# statistics, including the gross power generation per grid.
+URL = "https://prod-cms.doe.gov.ph/documents/d/guest/annex-1_summary-electric-consumption-system-demand-gross-generation-installed-and-dependable-capacity-2003-2025-pdf"  # noqa: W505
+
+# Define the header of the table with the gross power generation per
 # grid.
-URL = "https://prod-cms.doe.gov.ph/documents/d/guest/06_electricity-consumption-pdf"
+TABLE_HEADER = "Gross Power Generation per Grid in GWh"
 
 # Define the codes of the grids as named in the PDF file.
 CODES_OF_GRIDS = {
     "Luzon": "PHL_LU",
     "Visayas": "PHL_VI",
     "Mindanao": "PHL_MI",
-    "Philippines": "PHL",
+    "Total Gross Generation": "PHL",
 }
 
 
@@ -49,24 +56,24 @@ def get_codes() -> list[str]:
     return list(CODES_OF_GRIDS.values())
 
 
-def download_electricity_consumption() -> pandas.DataFrame:
+def download_gross_generation() -> pandas.DataFrame:
     """
-    Download the annual electricity consumption per grid from the DOE.
+    Download the annual gross power generation per grid from the DOE.
 
     Returns
     -------
-    electricity_consumption : pandas.DataFrame
-        The annual electricity consumption in MWh, with the codes of
-        the grids as index and the years as columns.
+    gross_generation : pandas.DataFrame
+        The annual gross power generation in MWh, with the codes of the
+        grids as index and the years as columns.
 
     Raises
     ------
     ValueError
-        If the electricity consumption of a grid cannot be found in the
-        PDF file.
+        If the table or the gross power generation of a grid cannot be
+        found in the PDF file.
     """
     logging.info(
-        "Downloading electricity consumption per grid data from the DOE "
+        "Downloading gross power generation per grid data from the DOE "
         "of the Philippines."
     )
 
@@ -79,60 +86,71 @@ def download_electricity_consumption() -> pandas.DataFrame:
     # Extract the text of the PDF file.
     reader = pypdf.PdfReader(io.BytesIO(response.content))
     lines = "\n".join(page.extract_text() for page in reader.pages)
-    lines = lines.splitlines()
+    lines = [line.strip() for line in lines.splitlines()]
 
-    # Each grid has a header line with its name followed by the years,
-    # and an "Electricity Consumption" line with the values of each
-    # year. Parse the lines to extract the electricity consumption of
-    # each grid.
-    electricity_consumption = {}
-    grid = None
-    years: list[int] = []
-    for line in lines:
-        words = line.split()
+    # Find the header line of the table, which ends with the years.
+    try:
+        header_index = next(
+            index
+            for index, line in enumerate(lines)
+            if line.startswith(TABLE_HEADER)
+        )
+    except StopIteration:
+        raise ValueError(
+            f"The table '{TABLE_HEADER}' could not be found in the DOE PDF "
+            "file."
+        ) from None
+    years = [
+        int(word)
+        for word in lines[header_index][len(TABLE_HEADER) :].split()
+    ]
 
-        if not words:
-            continue
+    # Each line of the table starts with the name of the grid, followed
+    # by the value of each year. The table ends with the "Total Gross
+    # Generation" line.
+    gross_generation = {}
+    for line in lines[header_index + 1 :]:
+        grid = next(
+            (name for name in CODES_OF_GRIDS if line.startswith(name)), None
+        )
+        if grid is None:
+            break
 
-        if words[0] in CODES_OF_GRIDS:
-            # Header line of a grid: get the name of the grid and the
-            # years. Duplicates are removed because the header ends
-            # with the share of the last year (e.g., "% Share - 2024").
-            grid = words[0]
-            years = list(
-                dict.fromkeys(
-                    int(word) for word in words[1:] if word.isdigit()
-                )
+        values = [
+            float(word.replace(",", ""))
+            for word in line[len(grid) :].split()
+        ]
+        if len(values) != len(years):
+            raise ValueError(
+                f"The number of values of {grid} ({len(values)}) does not "
+                f"match the number of years ({len(years)}) in the DOE PDF "
+                "file."
             )
 
-        elif line.strip().startswith("Electricity Consumption") and grid:
-            # Electricity consumption line: get the value of each year.
-            values = [
-                float(word.replace(",", ""))
-                for word in words[2:]
-                if word.replace(",", "").replace(".", "").isdigit()
-            ]
-            electricity_consumption[CODES_OF_GRIDS[grid]] = pandas.Series(
-                values[: len(years)], index=years
-            )
-            grid = None
+        # Convert the values from GWh to MWh.
+        gross_generation[CODES_OF_GRIDS[grid]] = pandas.Series(
+            values, index=years
+        ) * 1000
 
-    missing_codes = set(get_codes()) - set(electricity_consumption)
+        if CODES_OF_GRIDS[grid] == "PHL":
+            break
+
+    missing_codes = set(get_codes()) - set(gross_generation)
     if missing_codes:
         raise ValueError(
-            "The electricity consumption of the following entities could "
+            "The gross power generation of the following entities could "
             f"not be found in the DOE PDF file: {', '.join(missing_codes)}."
         )
 
     # Build a DataFrame with the codes as index and the years as
     # columns.
-    electricity_consumption = pandas.DataFrame(electricity_consumption).T
-    electricity_consumption.index.name = "Code"
-    electricity_consumption.columns.name = "Year"
+    gross_generation = pandas.DataFrame(gross_generation).T
+    gross_generation.index.name = "Code"
+    gross_generation.columns.name = "Year"
 
     logging.info(
-        "Electricity consumption per grid data from the DOE has been "
+        "Gross power generation per grid data from the DOE has been "
         "downloaded successfully."
     )
 
-    return electricity_consumption
+    return gross_generation

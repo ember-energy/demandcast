@@ -9,6 +9,7 @@ models/*/figures/
 models/*/models/
 models/*/predictions/
 results/
+demandcast/config
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
