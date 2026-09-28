@@ -9,9 +9,9 @@ Description:
     The unit for electricity demand per capita is kWh and for GDP PPP
     per capita is 2021 international dollars.
 
-    Source: https://data.worldbank.org/indicator/SP.POP.TOTL
-    Source: https://data.worldbank.org/indicator/EG.USE.ELEC.KH.PC
-    Source: https://data.worldbank.org/indicator/NY.GDP.PCAP.PP.KD
+    Population: https://data.worldbank.org/indicator/SP.POP.TOTL
+    Annual electricity consumption per capita: https://data.worldbank.org/indicator/EG.USE.ELEC.KH.PC
+    GDP per capita, PPP: https://data.worldbank.org/indicator/NY.GDP.PCAP.PP.KD
 """
 
 import logging

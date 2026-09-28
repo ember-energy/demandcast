@@ -9,6 +9,7 @@ models/*/figures/
 models/*/models/
 models/*/predictions/
 results/
+demandcast/config
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -160,3 +161,8 @@ cython_debug/
 
 # macOS
 .DS_Store
+demandcast/config/assemble_config.yaml
+demandcast/config/forecast_config.yaml
+demandcast/config/retrieve_config.yaml
+demandcast/config/train_config.yaml
+
