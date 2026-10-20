@@ -147,9 +147,12 @@ def _construct_output_dataset(
     output_dataset = pandas.concat(
         [output_dataset, prepared_dataset["group"]], axis=1
     )
-    output_dataset = pandas.concat(
-        [output_dataset, prepared_dataset["features"]], axis=1
+    # The group column can also be a feature (e.g., "Entity code"), so
+    # leave it out of the features to avoid a duplicate column.
+    features = prepared_dataset["features"].drop(
+        columns=prepared_dataset["group"].name, errors="ignore"
     )
+    output_dataset = pandas.concat([output_dataset, features], axis=1)
     if "others" in prepared_dataset:
         output_dataset = pandas.concat(
             [output_dataset, prepared_dataset["others"]], axis=1

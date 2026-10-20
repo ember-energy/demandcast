@@ -2,8 +2,8 @@
 
 # REQUIRED.
 # Whether a validation set was used during training.
-used_validation_set: false
-
+used_validation_set: true
+s
 # OPTIONAL.
 # The machine learning algorithm to be used for validation.
 model_path:
