@@ -42,6 +42,7 @@ def read_and_check_ml_configuration() -> BaseModel:
         splitter: str
         time: str
         categorical_features: Optional[list[str]] = None
+        categorical_values: Optional[dict[str, list[str]]] = None
         scaling_variables: Optional[list[str]] = None
 
     # Define the path to the features and target configuration file.
@@ -276,6 +277,7 @@ def _split_in_groups(
     categorical_feature_columns: list[str] | None = None,
     scaling_variable_columns: list[str] | None = None,
     target: bool = True,
+    categorical_values: dict[str, list[str]] | None = None,
 ) -> dict[str, dict[str, pandas.DataFrame | pandas.Series]]:
     """
     Split the dataset into features, target, group, and scaling factor.
@@ -299,6 +301,10 @@ def _split_in_groups(
         List of scaling variable column names.
     target : bool, optional
         Whether to include the target variable in the prepared dataset.
+    categorical_values : dict[str, list[str]] | None, optional
+        The fixed categories of the non-numeric categorical features
+        (e.g., "Entity code"), so that the training and forecasting
+        data use the same category codes.
 
     Returns
     -------
@@ -341,11 +347,30 @@ def _split_in_groups(
     features = dataset[feature_columns].copy()
 
     if categorical_feature_columns:
-        # Convert values of categorical features to integer type and
-        # then to category dtype.
+        # Convert numeric categorical features to integer type and then
+        # to category dtype. Text categorical features (e.g., the entity
+        # code) use the fixed categories of categorical_values, so that
+        # the codes are the same in training and forecasting.
         for feature in categorical_feature_columns:
-            features[feature] = (
-                features[feature].astype(int).astype("category")
+            column = features[feature]
+            if pandas.api.types.is_numeric_dtype(column):
+                features[feature] = column.astype(int).astype("category")
+                continue
+
+            categories = (categorical_values or {}).get(feature)
+            if categories is None:
+                raise ValueError(
+                    f"The text feature '{feature}' needs its categories in "
+                    "categorical_values of the ML configuration."
+                )
+            unknown = set(column.unique()) - set(categories)
+            if unknown:
+                raise ValueError(
+                    f"'{feature}' has values not in categorical_values: "
+                    f"{sorted(unknown)}."
+                )
+            features[feature] = pandas.Categorical(
+                column, categories=categories
             )
 
     # Split the dataset into features and group.
@@ -437,6 +462,7 @@ def prepare_dataset(
                 ml_config.categorical_features,
                 ml_config.scaling_variables,
                 target,
+                ml_config.categorical_values,
             )
 
         return prepared_dataset
@@ -452,6 +478,7 @@ def prepare_dataset(
             ml_config.categorical_features,
             ml_config.scaling_variables,
             target,
+            ml_config.categorical_values,
         )
 
 

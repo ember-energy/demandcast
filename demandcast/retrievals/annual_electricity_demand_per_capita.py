@@ -4,6 +4,8 @@ License: AGPL-3.0.
 
 Description:
 
+    1. Default setting (from demandcast)
+
     This module includes functions to download and extract historical
     annual electricity demand per capita data from Ember and the World
     Bank, and to calculate future annual electricity demand per capita
@@ -17,6 +19,23 @@ Description:
     regional gross power generation by the regional population. For
     the years before the regional data starts, and for other
     subdivisions, the national value is used.
+
+    2. For specific scenarios
+
+    2.1. Philippines
+
+    Historical gross power generation data by subdivisions are taken from the Philippines' Department of Energy (DOE) from 2003 - 2025.
+    Historical population by subdivisions are taken from the Philippines Statistics Agency (PSA) from 2000 - 2024. 
+
+    For the future, the Philippines and its grids do not use the growth
+    rates of the IAMC scenarios. Instead, the projected annual
+    electricity sales of the Philippine Energy Plan (PEP) are converted
+    to annual electricity demand with the grid-load factors, and divided
+    by the projected population of the PSA. The scenarios are named
+    after the PEP scenario (REF or CES) and the PSA population scenario
+    (PSA1, PSA2, or PSA3), e.g., PEP-REF-PSA2. Use the same PSA
+    scenario for the population when assembling the data, so that the
+    annual demand is retrieved.
 """
 
 import logging
@@ -30,7 +49,11 @@ import utils.time_series
 from tqdm import tqdm
 
 import retrievals.population
-from retrievals.socio_economic_data_sources import doe_philippines
+from retrievals.socio_economic_data_sources import (
+    doe_philippines,
+    pep_philippines,
+    psa_philippines,
+)
 import retrievals.socio_economic_data_sources.ember as ember
 import retrievals.socio_economic_data_sources.iiasa as iiasa
 import retrievals.socio_economic_data_sources.world_bank as world_bank
@@ -72,7 +95,105 @@ def get_available_scenarios() -> list[str]:
         "SSP5-34",
         "SSP5-45",
         "SSP5-60",
+    ] + get_pep_scenarios()
+
+
+def get_pep_scenarios() -> list[str]:
+    """
+    Get the scenarios for the Philippines based on the PEP.
+
+    Returns
+    -------
+    list[str]
+        The combinations of the PEP scenario and the PSA population
+        scenario used to convert the demand to demand per capita.
+    """
+    return [
+        f"PEP-{pep_scenario}-{population_scenario}"
+        for pep_scenario in pep_philippines.get_scenarios()
+        for population_scenario in psa_philippines.get_projection_scenarios()
     ]
+
+
+def uses_pep_projection(code: str) -> bool:
+    """
+    Check if the future demand of a code comes from the PEP.
+
+    Parameters
+    ----------
+    code : str
+        The code of the country or subdivision of interest.
+
+    Returns
+    -------
+    bool
+        True for the Philippines and its grids.
+    """
+    return code == "PHL" or code in pep_philippines.get_codes()
+
+
+def get_available_scenarios_for_code(code: str) -> list[str]:
+    """
+    Get the available future scenarios of a country or subdivision.
+
+    Parameters
+    ----------
+    code : str
+        The code of the country or subdivision of interest.
+
+    Returns
+    -------
+    list[str]
+        The PEP-based scenarios for the Philippines and its grids, and
+        the IAMC scenarios for the other countries and subdivisions.
+    """
+    if uses_pep_projection(code):
+        return get_pep_scenarios()
+
+    return [
+        scenario
+        for scenario in get_available_scenarios()
+        if scenario not in get_pep_scenarios()
+    ]
+
+
+def get_future_data_from_pep(code: str, scenario: str) -> pandas.Series:
+    """
+    Get the future electricity demand per capita from the PEP.
+
+    The projected annual electricity sales of the grids are multiplied
+    by the grid-load factors to get the annual electricity demand. The
+    demand of the Philippines is the sum of the demand of the grids.
+    The demand is divided by the projected population of the PSA.
+
+    Parameters
+    ----------
+    code : str
+        The code of the Philippines or one of its grids.
+    scenario : str
+        The scenario, with the format PEP-{PEP scenario}-{PSA scenario}.
+
+    Returns
+    -------
+    pandas.Series
+        The future electricity demand per capita in kWh, with the years
+        as index. It covers the years in which both the PEP and the PSA
+        projections are available.
+    """
+    __, pep_scenario, population_scenario = scenario.split("-")
+
+    # Get the annual electricity demand in MWh.
+    demand = pep_philippines.read_annual_electricity_demand(pep_scenario)
+    demand = demand.sum() if code == "PHL" else demand.loc[code]
+
+    # Get the projected population.
+    population = retrievals.population.get_future_population_from_psa(
+        code, population_scenario
+    )
+
+    # Calculate the electricity demand per capita, converting MWh to
+    # kWh.
+    return (demand * 1000 / population).dropna()
 
 
 def get_historical_data() -> pandas.DataFrame:
@@ -222,9 +343,6 @@ def run_data_retrieval(
         "all_data", code=code, file_path=file
     )
 
-    # Get the available scenarios.
-    available_scenarios = get_available_scenarios()
-
     # If any subdivision has regional data, download the regional
     # gross power generation and the population data.
     if set(codes) & set(get_regional_codes()):
@@ -299,6 +417,22 @@ def run_data_retrieval(
             range(max(available_historical_years) + 1, 2101)
         )
 
+        # Get the available scenarios of the country or subdivision. If
+        # an unavailable scenario that is requested, no
+        # future data is retrieved for it.
+        available_scenarios = get_available_scenarios_for_code(code)
+        scenario_of_code = (
+            scenario
+            if scenario is None
+            or scenario.upper() in available_scenarios
+            else None
+        )
+        if scenario_of_code is None:
+            logging.warning(
+                f"The scenario {scenario} is not available for {code}. "
+                f"Available scenarios: {available_scenarios}."
+            )
+
         # Get the list of year and scenario combinations.
         year_scenario_list = (
             utils.scenarios.get_year_and_scenario_combinations(
@@ -307,10 +441,16 @@ def run_data_retrieval(
                 end_year,
                 available_historical_years,
                 available_future_years,
-                scenario,
+                scenario_of_code,
                 available_scenarios,
             )
         )
+        if scenario_of_code is None and scenario is not None:
+            year_scenario_list = [
+                (year, scenario_of_year)
+                for year, scenario_of_year in year_scenario_list
+                if scenario_of_year is None
+            ]
 
         # Define the file path of the electricity demand per capita
         # data of the country or subdivision.
@@ -405,37 +545,48 @@ def run_data_retrieval(
                 )
 
         if selected_future_years:
-            for scenario in selected_scenarios:
+            for future_scenario in selected_scenarios:
                 if not os.path.exists(
                     f"{file_path_without_ext}_"
-                    f"{scenario.replace('-', '_')}.parquet"
+                    f"{future_scenario.replace('-', '_')}.parquet"
                 ) or not os.path.exists(
-                    f"{file_path_without_ext}_{scenario.replace('-', '_')}.csv"
+                    f"{file_path_without_ext}_{future_scenario.replace('-', '_')}.csv"
                 ):
                     logging.info(
                         f"Extracting future annual electricity demand per "
-                        f"capita data for {code} and {scenario}."
+                        f"capita data for {code} and {future_scenario}."
                     )
 
-                    # Get the last year and value of the historical
-                    # electricity demand per capita.
-                    last_historical_year = max(available_historical_years)
-                    last_historical_value = (
-                        historical_electricity_demand_per_capita.loc[
-                            last_historical_year
-                        ]
-                    )
+                    if uses_pep_projection(code):
+                        # Calculate the future electricity demand per
+                        # capita from the projected electricity sales
+                        # of the PEP and the projected population of
+                        # the PSA.
+                        future_electricity_demand_per_capita = (
+                            get_future_data_from_pep(code, future_scenario)
+                        )
+                    else:
+                        # Get the last year and value of the historical
+                        # electricity demand per capita.
+                        last_historical_year = max(available_historical_years)
+                        last_historical_value = (
+                            historical_electricity_demand_per_capita.loc[
+                                last_historical_year
+                            ]
+                        )
 
-                    # Calculate the future electricity demand per
-                    # capita.
-                    future_electricity_demand_per_capita = iiasa.extrapolate(
-                        global_future_electricity_demand_per_capita_growth_rates,
-                        iso_alpha_3_code,
-                        scenario,
-                        last_historical_value,
-                        last_historical_year,
-                        available_future_years,
-                    )
+                        # Calculate the future electricity demand per
+                        # capita.
+                        future_electricity_demand_per_capita = (
+                            iiasa.extrapolate(
+                                global_future_electricity_demand_per_capita_growth_rates,
+                                iso_alpha_3_code,
+                                future_scenario,
+                                last_historical_value,
+                                last_historical_year,
+                                available_future_years,
+                            )
+                        )
 
                     # Extract the electricity demand per capita for
                     # the selected future years.
@@ -467,21 +618,21 @@ def run_data_retrieval(
                     # Save the electricity demand per capita data to
                     # parquet and CSV files.
                     selected_future_electricity_demand_per_capita.to_frame().to_parquet(
-                        f"{file_path_without_ext}_{scenario.replace('-', '_')}.parquet"
+                        f"{file_path_without_ext}_{future_scenario.replace('-', '_')}.parquet"
                     )
                     selected_future_electricity_demand_per_capita.to_csv(
-                        f"{file_path_without_ext}_{scenario.replace('-', '_')}.csv",
+                        f"{file_path_without_ext}_{future_scenario.replace('-', '_')}.csv",
                     )
 
                     logging.info(
                         f"Future annual electricity demand per capita data "
-                        f"for {code} and {scenario} has been extracted "
+                        f"for {code} and {future_scenario} has been extracted "
                         "and saved successfully."
                     )
 
                 else:
                     logging.info(
                         f"Future annual electricity demand per capita data "
-                        f"for {code} and {scenario} already exists. "
+                        f"for {code} and {future_scenario} already exists. "
                         "Skipping retrieval."
                     )

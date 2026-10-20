@@ -41,8 +41,8 @@ import matplotlib.pyplot as plt
 import pandas
 
 # Define the first and last day of the profile (DD-MM-YYYY, inclusive).
-START_DATE = "01-01-2025"
-END_DATE = "31-12-2025"
+START_DATE = "01-01-2030"
+END_DATE = "31-12-2030"
 DATE_FORMAT = "%d-%m-%Y"
 
 # Define the local time zone of the Philippines.
@@ -56,14 +56,22 @@ DC_TYPE_WEIGHTS = {"Co-located": 1.0, "Enterprise": 0.0}
 # shape. In the UKPN data, bank holidays are close to weekends.
 TREAT_HOLIDAYS_AS_WEEKENDS = True
 
-# Define the parameters of the average demand of the data centres. If
-# CAPACITY_MW or UTILISATION is None, only the normalised profile is
+# Define the parameters of the average demand of the data centres. A
+# profile is built for each subdivision of CAPACITY_MW. If a capacity,
+# UTILISATION, or OCCUPANCY is None, only the normalised profile is
 # saved. Use PUE = 1 if CAPACITY_MW is the contracted (grid) capacity,
 # and the PUE of the Philippines if CAPACITY_MW is the IT capacity.
-CAPACITY_MW = 107
-OCCUPANCY = 0.6
-UTILISATION = 0.6
-PUE = 1.5
+CAPACITY_MW = {
+    "PHL_LU": 236.13,
+    "PHL_VI": 102,
+    "PHL_MI": 171.87,
+}
+OCCUPANCY = 0.85
+UTILISATION = 0.72
+PUE = 1.55
+# Define the scenario of the capacity: "Low", "Mid", "High", or
+# "High suitable areas". It is added to the name of the saved files.
+SCENARIO = "High suitable areas"
 
 # Define the demandcast folder, and the folder of the UKPN results.
 DEMANDCAST_DIRECTORY = os.path.dirname(
@@ -172,7 +180,10 @@ def get_hourly_shapes(diurnal_profiles_path: str) -> pandas.DataFrame:
 
 
 def build_hourly_profile(
-    hourly_shapes: pandas.DataFrame, start_date: str, end_date: str
+    hourly_shapes: pandas.DataFrame,
+    start_date: str,
+    end_date: str,
+    capacity_mw: float | None,
 ) -> pandas.DataFrame:
     """
     Build the hourly demand profile of the data centres in the Philippines.
@@ -185,13 +196,15 @@ def build_hourly_profile(
         The first day of the profile (DATE_FORMAT).
     end_date : str
         The last day of the profile (DATE_FORMAT), included.
+    capacity_mw : float or None
+        The capacity of the data centres of the subdivision.
 
     Returns
     -------
     pandas.DataFrame
         The hourly profile with the local and UTC time, the day type, the
         normalised demand (mean of 1 over the period), and the demand in
-        MW if CAPACITY_MW, UTILISATION, OCCUPANCY are set.
+        MW if capacity_mw, UTILISATION, OCCUPANCY are set.
     """
     start = datetime.strptime(start_date, DATE_FORMAT)
     end = datetime.strptime(end_date, DATE_FORMAT)
@@ -233,19 +246,22 @@ def build_hourly_profile(
         columns=["hour", "shape"]
     )
 
-    if CAPACITY_MW is not None and UTILISATION is not None and OCCUPANCY is not None:
-        average_demand = CAPACITY_MW * UTILISATION * PUE * OCCUPANCY
+    if capacity_mw is not None and UTILISATION is not None and OCCUPANCY is not None:
+        average_demand = capacity_mw * UTILISATION * PUE * OCCUPANCY
         profile["Demand (MW)"] = average_demand * profile["Normalised demand"]
         logging.info(
-            f"Average demand: {average_demand:.1f} MW "
-            f"({CAPACITY_MW} MW x {UTILISATION} x {OCCUPANCY} x PUE {PUE} )."
+            f"Average demand: {average_demand:.3f} MW "
+            f"({capacity_mw} MW x {UTILISATION} x {OCCUPANCY} x PUE {PUE})."
         )
 
     return profile
 
 
 def plot_profile(
-    hourly_shapes: pandas.DataFrame, profile: pandas.DataFrame, file_path: str
+    hourly_shapes: pandas.DataFrame,
+    profile: pandas.DataFrame,
+    code: str,
+    file_path: str,
 ) -> None:
     """
     Plot the hourly shapes and the first two weeks of the profile.
@@ -256,6 +272,8 @@ def plot_profile(
         The output of get_hourly_shapes.
     profile : pandas.DataFrame
         The output of build_hourly_profile.
+    code : str
+        The code of the subdivision (e.g., PHL_LU).
     file_path : str
         The path of the figure.
     """
@@ -285,7 +303,7 @@ def plot_profile(
         ax.grid(True, linestyle="--", alpha=0.6)
     weights = ", ".join(f"{t}: {w}" for t, w in DC_TYPE_WEIGHTS.items())
     fig.suptitle(
-        f"Philippines data centres: hourly demand profile ({weights})",
+        f"{code} data centres, {SCENARIO} scenario: hourly demand profile ({weights})",
         fontweight="bold",
     )
     fig.tight_layout()
@@ -295,39 +313,52 @@ def plot_profile(
 
 def run() -> None:
     """
-    Build and save the hourly demand profile of the data centres.
+    Build and save the hourly demand profile of the data centres of each
+    subdivision of CAPACITY_MW.
 
-    The profile is saved in data/data_centre_demand_profiles/PHL/ as a
-    CSV file with a figure, named
-    phl_data_centre_demand_<start>_<end>_<YYYYmmdd-HHMMSS>.
+    Each profile is saved in data/data_centre_demand_profiles/PHL/<YYYY-MM-DD>/ as a
+    CSV and a Parquet file with a figure, named
+    <code>_data_centre_demand_<scenario>_<start>_<end>_<YYYYmmdd-HHMMSS>
+    (e.g., phl_lu_data_centre_demand_high_suitable_areas_20250101_20251231_
+    20260930-120000).
     """
-    os.makedirs(RESULT_DIRECTORY, exist_ok=True)
+    # Save the files in a sub-folder of the current date (YYYY-MM-DD).
+    result_directory = os.path.join(
+        RESULT_DIRECTORY, datetime.now().strftime("%Y-%m-%d")
+    )
+    os.makedirs(result_directory, exist_ok=True)
 
     diurnal_profiles_path = _get_ukpn_diurnal_profiles_path()
     logging.info(f"Reading the UKPN diurnal profiles from {diurnal_profiles_path}.")
 
     hourly_shapes = get_hourly_shapes(diurnal_profiles_path)
-    profile = build_hourly_profile(hourly_shapes, START_DATE, END_DATE)
 
     # Name the files with the period of the profile and the current time,
     # so that previous runs are not overwritten.
     time_current = datetime.now().strftime("%Y%m%d-%H%M%S")
-    file_name = "phl_data_centre_demand_{}_{}_{}".format(
-        *(
-            datetime.strptime(date, DATE_FORMAT).strftime("%Y%m%d")
-            for date in (START_DATE, END_DATE)
-        ),
-        time_current,
-    )
-    profile.to_csv(os.path.join(RESULT_DIRECTORY, f"{file_name}.csv"), index=False)
-    plot_profile(
-        hourly_shapes, profile, os.path.join(RESULT_DIRECTORY, f"{file_name}.png")
+    start, end = (
+        datetime.strptime(date, DATE_FORMAT).strftime("%Y%m%d")
+        for date in (START_DATE, END_DATE)
     )
 
-    logging.info(
-        f"Saved the hourly profile of {len(profile)} hours to "
-        f"{os.path.join(RESULT_DIRECTORY, file_name)}.csv."
-    )
+    scenario = re.sub(r"\W+", "_", SCENARIO.strip().lower()).strip("_")
+
+    for code, capacity_mw in CAPACITY_MW.items():
+        logging.info(f"Building the hourly profile of {code} ({SCENARIO} scenario).")
+        profile = build_hourly_profile(hourly_shapes, START_DATE, END_DATE, capacity_mw)
+
+        file_path = os.path.join(
+            result_directory,
+            f"{code.lower()}_data_centre_demand_{scenario}_{start}_{end}_{time_current}",
+        )
+        profile.to_csv(f"{file_path}.csv", index=False)
+        profile.to_parquet(f"{file_path}.parquet", index=False)
+        plot_profile(hourly_shapes, profile, code, f"{file_path}.png")
+
+        logging.info(
+            f"Saved the hourly profile of {code} ({len(profile)} hours) to "
+            f"{file_path}.csv."
+        )
 
 
 if __name__ == "__main__":

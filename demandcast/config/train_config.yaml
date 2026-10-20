@@ -10,4 +10,4 @@ use_validation_set: true
 
 # OPTIONAL.
 # The path to the assembled data to be used for training.
-data_path: "D:/Modelling/demandcast/demandcast/data/assembled/20260925/assembled_data_for_training_20260925_123024.parquet"
+data_path: "D:/Modelling/demandcast/demandcast/data/assembled/20261005/assembled_data_for_training_20261005_114420.parquet"

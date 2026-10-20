@@ -41,9 +41,58 @@ def get_available_scenarios() -> list[str]:
     Returns
     -------
     list[str]
-        The available scenarios for the population data.
+        The available scenarios for the population data: the SSPs of
+        IIASA, and the scenarios of the PSA projections for the
+        Philippines.
     """
-    return ["SSP1", "SSP2", "SSP3", "SSP4", "SSP5"]
+    return ["SSP1", "SSP2", "SSP3", "SSP4", "SSP5"] + (
+        psa_philippines.get_projection_scenarios()
+    )
+
+
+def uses_psa_projection(code: str) -> bool:
+    """
+    Check if the future population of a code comes from the PSA.
+
+    Parameters
+    ----------
+    code : str
+        The code of the country or subdivision of interest.
+
+    Returns
+    -------
+    bool
+        True for the Philippines and its grids with census data.
+    """
+    return code == "PHL" or code in psa_philippines.get_codes()
+
+
+def get_available_scenarios_for_code(code: str) -> list[str]:
+    """
+    Get the available future scenarios of a country or subdivision.
+
+    The Philippines and its subdivisions use the population projections
+    of the PSA, and the other countries and subdivisions use the SSPs
+    of IIASA.
+
+    Parameters
+    ----------
+    code : str
+        The code of the country or subdivision of interest.
+
+    Returns
+    -------
+    list[str]
+        The available scenarios for the population data of the code.
+    """
+    if uses_psa_projection(code):
+        return psa_philippines.get_projection_scenarios()
+
+    return [
+        scenario
+        for scenario in get_available_scenarios()
+        if scenario not in psa_philippines.get_projection_scenarios()
+    ]
 
 
 def _get_share_of_national_gridded_population(
@@ -64,6 +113,7 @@ def _get_share_of_national_gridded_population(
     - Years after 2020: The gridded data stops at 2020, so the 2020 regional shares are applied to later year's WB total.
     Before this, those years stayed flat at 2020 values. 
     - Future: the same share method, scaled to the IIASA projection for the same scenario.
+    (The Philippines and its grids use the PSA projection instead.)
 
 
     Parameters
@@ -269,6 +319,38 @@ def get_historical_population(
     )
 
 
+def get_future_population_from_psa(code: str, scenario: str) -> pandas.Series:
+    """
+    Get the future population of the Philippines or one of its grids.
+
+    The national projection of the PSA is scaled by the census share of
+    the grid, which is held at the value of the last census.
+
+    Parameters
+    ----------
+    code : str
+        The code of the Philippines or of one of its grids.
+    scenario : str
+        The scenario of the PSA projection (PSA1, PSA2, or PSA3).
+
+    Returns
+    -------
+    pandas.Series
+        The future population in number of people, with the years as
+        index.
+    """
+    national_population = psa_philippines.read_national_population_projection(
+        scenario
+    )
+    if code == "PHL":
+        return national_population
+
+    share = _get_share_of_national_census_population(
+        code, national_population.index.tolist()
+    )
+    return share * national_population
+
+
 def _extract_future_population(
     code: str,
     global_future_population: pandas.DataFrame,
@@ -302,27 +384,19 @@ def _extract_future_population(
     """
     country_code = code.split("_")[0]
 
-    # Check if code is in the future population data. If so, it means
-    # that it is an ISO Alpha-3 code of a country.
-    if code in global_future_population.index:
+    if uses_psa_projection(code):
+        # For the Philippines and its grids, use the projection of the
+        # PSA.
+        return get_future_population_from_psa(code, scenario)
+    elif code in global_future_population.index:
+        # Check if code is in the future population data. If so, it
+        # means that it is an ISO Alpha-3 code of a country.
         # Get the future population from the IIASA data.
         future_population = iiasa.extract_and_interpolate(
             global_future_population,
             code,
             scenario,
         )
-    elif (
-        code in psa_philippines.get_codes()
-        and country_code in global_future_population.index
-    ):
-        # For subdivisions with census data, scale the national
-        # population by the census share of the subdivision, which is
-        # held at the value of the last census.
-        share = _get_share_of_national_census_population(code, future_years)
-        national_population = iiasa.extract_and_interpolate(
-            global_future_population, country_code, scenario
-        )
-        future_population = share * national_population.reindex(share.index)
     else:
         # Extract the future population for the country or subdivision
         # by aggregating gridded data.
@@ -412,13 +486,26 @@ def run_data_retrieval(
     available_historical_years_of_gridded_data = list(range(2000, 2021, 5))
     available_future_years_of_gridded_data = list(range(2025, 2101, 5))
 
-    # Define the available scenarios for the population data.
-    available_scenarios = get_available_scenarios()
-
     # Loop over the countries and subdivisions.
     for code in tqdm(codes, desc="Countries and subdivisions"):
         # Get the time zone of the country or subdivision.
         time_zone = utils.entities.get_time_zone(code)
+
+        # Get the available scenarios of the country or subdivision. If
+        # a scenario that is not available for it is requested, no
+        # future data is retrieved for it.
+        available_scenarios = get_available_scenarios_for_code(code)
+        scenario_of_code = (
+            scenario
+            if scenario is None
+            or scenario.upper() in available_scenarios
+            else None
+        )
+        if scenario_of_code is None:
+            logging.warning(
+                f"The scenario {scenario} is not available for {code}. "
+                f"Available scenarios: {available_scenarios}."
+            )
 
         # Get the years and scenarios dictionary for the country or
         # subdivision of interest.
@@ -432,11 +519,13 @@ def run_data_retrieval(
             year,
             start_year,
             end_year,
-            scenario,
+            scenario_of_code,
             available_scenarios,
             global_historical_population,
             available_historical_years_of_gridded_data,
         )
+        if scenario_of_code is None and scenario is not None:
+            scenarios = []
 
         # Define the file path of the population data of the
         # subdivision.
@@ -504,15 +593,15 @@ def run_data_retrieval(
                 )
 
         if future_years:
-            for scenario in scenarios:
+            for future_scenario in scenarios:
                 if not os.path.exists(
-                    f"{file_path_without_ext}_{scenario}.parquet"
+                    f"{file_path_without_ext}_{future_scenario}.parquet"
                 ) or not os.path.exists(
-                    f"{file_path_without_ext}_{scenario}.csv"
+                    f"{file_path_without_ext}_{future_scenario}.csv"
                 ):
                     logging.info(
                         f"Extracting future population data for "
-                        f"{code} and scenario {scenario}."
+                        f"{code} and scenario {future_scenario}."
                     )
 
                     # Extract the future population data for the country
@@ -523,7 +612,7 @@ def run_data_retrieval(
                         future_years,
                         available_future_years_of_gridded_data,
                         available_historical_years_of_gridded_data,
-                        scenario,
+                        future_scenario,
                     )
 
                     # Extract the future population for the selected
@@ -550,21 +639,21 @@ def run_data_retrieval(
                     # Save the future population data to CSV and Parquet
                     # files.
                     selected_future_population.to_frame().to_parquet(
-                        f"{file_path_without_ext}_{scenario}.parquet",
+                        f"{file_path_without_ext}_{future_scenario}.parquet",
                     )
                     selected_future_population.to_csv(
-                        f"{file_path_without_ext}_{scenario}.csv",
+                        f"{file_path_without_ext}_{future_scenario}.csv",
                     )
 
                     logging.info(
                         f"Future population data for {code} and "
-                        f"scenario {scenario} has been extracted "
+                        f"scenario {future_scenario} has been extracted "
                         "and saved successfully."
                     )
 
                 else:
                     logging.info(
                         f"Future population data for {code} and "
-                        f"scenario {scenario} already exists. "
+                        f"scenario {future_scenario} already exists. "
                         "Skipping extraction."
                     )
