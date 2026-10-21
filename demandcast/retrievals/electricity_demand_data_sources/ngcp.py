@@ -58,7 +58,7 @@ def redistribute() -> bool:
     Returns
     -------
     bool
-        True if the data can be redistributed, False otherwise.
+        True if the data can be redistributed.
     """
     logging.debug("All rights reserved by NGCP.")
     logging.debug("Source: https://ngcp.ph")
