@@ -5,11 +5,12 @@ License: AGPL-3.0.
 Description:
 
     This module builds the hourly electricity demand profile of the data
-    centres in the Philippines, from the average diurnal profiles of the
-    data centres connected to the network of UK Power Networks (UKPN).
+    centres in any country or subdivision, from the average diurnal
+    profiles of the data centres connected to the network of UK Power
+    Networks (UKPN).
 
-    Each hour of the Philippines is mapped, by its local hour of the
-    day, to the UKPN normalised weekday shape (Monday to Friday) or
+    Each hour of a country or subdivision is mapped, by its local hour of
+    the day, to the UKPN normalised weekday shape (Monday to Friday) or
     weekend shape (Saturday and Sunday). The half-hourly UKPN shapes are
     averaged into hourly values, and the shapes of the data centre types
     are weighted by DC_TYPE_WEIGHTS. The profile is then rescaled so that
@@ -24,6 +25,14 @@ Description:
     - contracted (grid) capacity x utilisation, with PUE = 1; or
     - IT capacity x IT utilisation x PUE.
 
+    The countries and subdivisions are the keys of CAPACITY_MW, with the
+    codes of demandcast: the ISO Alpha-3 code of the country (e.g., PHL),
+    optionally followed by the code of the subdivision (e.g., PHL_LU).
+    The local time zone of each code is taken from utils.entities, unless
+    it is set in TIME_ZONES, and the public holidays from the holidays
+    package, for the country and, if set in HOLIDAY_SUBDIVISIONS, the
+    subdivision.
+
     Run ukpn_data_centres.py first to create the UKPN diurnal profiles.
 
     Usage (from the demandcast folder):
@@ -34,49 +43,73 @@ Description:
 import logging
 import os
 import re
-from datetime import datetime
+import sys
+from datetime import datetime, tzinfo
 
 import holidays
 import matplotlib.pyplot as plt
 import pandas
+import pycountry_convert
+import pytz
+
+# Define the demandcast folder, and add it to the path to import utils.
+DEMANDCAST_DIRECTORY = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
+sys.path.insert(0, DEMANDCAST_DIRECTORY)
+
+import utils.entities  # noqa: E402
 
 # Define the first and last day of the profile (DD-MM-YYYY, inclusive).
-START_DATE = "01-01-2030"
-END_DATE = "31-12-2030"
+START_DATE = "01-01-2025"
+END_DATE = "31-12-2025"
 DATE_FORMAT = "%d-%m-%Y"
 
-# Define the local time zone of the Philippines.
-TIME_ZONE = "Asia/Manila"
-
-# Define the weight of the UKPN shape of each data centre type. Most
-# data centres in the Philippines are co-located (colocation) sites.
+# Define the weight of the UKPN shape of each data centre type (e.g.,
+# most data centres in the Philippines are co-located sites).
 DC_TYPE_WEIGHTS = {"Co-located": 1.0, "Enterprise": 0.0}
 
-# Define whether the public holidays of the Philippines use the weekend
-# shape. In the UKPN data, bank holidays are close to weekends.
+# Define whether the public holidays use the weekend shape. In the UKPN
+# data, bank holidays are close to weekends.
 TREAT_HOLIDAYS_AS_WEEKENDS = True
 
-# Define the parameters of the average demand of the data centres. A
-# profile is built for each subdivision of CAPACITY_MW. If a capacity,
-# UTILISATION, or OCCUPANCY is None, only the normalised profile is
-# saved. Use PUE = 1 if CAPACITY_MW is the contracted (grid) capacity,
-# and the PUE of the Philippines if CAPACITY_MW is the IT capacity.
+# Define the countries or subdivisions (demandcast codes, e.g., PHL or
+# PHL_LU) and the capacity of their data centres (MW). A profile is
+# built for each code. If a capacity is None, only the normalised
+# profile is saved.
 CAPACITY_MW = {
-    "PHL_LU": 236.13,
-    "PHL_VI": 102,
-    "PHL_MI": 171.87,
+    "IDN_JAW": 373.5,
+    "IDN_BTM": 87.1,
+    "IDN_SUM": 3.4,
+    "IDN_KAL": 3.6,
+    "IDN_SUL": 0,
+    "IDN_NUS": 0,
+    "IDN_MAL": 0,
+    "IDN_PAP": 0,
 }
-OCCUPANCY = 0.85
-UTILISATION = 0.72
-PUE = 1.55
+
+# Define the time zones (e.g., "Asia/Manila") of the codes whose time
+# zone is not found, or is wrong, in utils.entities.
+TIME_ZONES: dict[str, str] = {}
+
+# Define the subdivision codes of the holidays package (e.g., "CA" for
+# USA_CAL) of the codes with regional public holidays. The other codes
+# use the national public holidays.
+HOLIDAY_SUBDIVISIONS: dict[str, str] = {}
+
+# Define the parameters of the average demand of the data centres,
+# either as one value for all codes or as a dictionary by code. If
+# UTILISATION or OCCUPANCY is None, only the normalised profile is
+# saved. Use PUE = 1 if CAPACITY_MW is the contracted (grid) capacity,
+# and the PUE of the country if CAPACITY_MW is the IT capacity.
+OCCUPANCY: float | dict[str, float] | None = 0.85
+UTILISATION: float | dict[str, float] | None = 0.72
+PUE: float | dict[str, float] = 1.55
 # Define the scenario of the capacity: "Low", "Mid", "High", or
 # "High suitable areas". It is added to the name of the saved files.
 SCENARIO = "High suitable areas"
 
-# Define the demandcast folder, and the folder of the UKPN results.
-DEMANDCAST_DIRECTORY = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)
+# Define the folder of the UKPN results.
 UKPN_DIRECTORY = os.path.join(
     DEMANDCAST_DIRECTORY, "data", "data_centre_demand_profiles"
 )
@@ -85,8 +118,96 @@ UKPN_DIRECTORY = os.path.join(
 # latest results are used.
 UKPN_DATE = None
 
-# Define the folder where the profile of the Philippines is saved.
-RESULT_DIRECTORY = os.path.join(UKPN_DIRECTORY, "PHL")
+# Define the folder where the profiles are saved, in a sub-folder of the
+# ISO Alpha-3 code of the country (e.g., PHL).
+RESULT_DIRECTORY = UKPN_DIRECTORY
+
+
+def _get_parameter(
+    value: float | dict[str, float] | None, code: str
+) -> float | None:
+    """
+    Get the value of a parameter of the average demand for a code.
+
+    Parameters
+    ----------
+    value : float, dict, or None
+        The value of the parameter, for all codes or by code.
+    code : str
+        The code of the country or subdivision (e.g., PHL_LU).
+
+    Returns
+    -------
+    float or None
+        The value of the parameter for the code, or None if not set.
+    """
+    if isinstance(value, dict):
+        return value.get(code)
+    return value
+
+
+def _get_time_zone(code: str) -> tzinfo:
+    """
+    Get the local time zone of a country or subdivision.
+
+    Parameters
+    ----------
+    code : str
+        The code of the country or subdivision (e.g., PHL_LU).
+
+    Returns
+    -------
+    datetime.tzinfo
+        The time zone of TIME_ZONES, or of utils.entities if the code is
+        not in TIME_ZONES. If the subdivision is not in utils.entities,
+        the time zone of its country is used.
+    """
+    if code in TIME_ZONES:
+        return pytz.timezone(TIME_ZONES[code])
+    try:
+        return utils.entities.get_time_zone(code)
+    except ValueError:
+        if "_" not in code:
+            raise
+        time_zone = utils.entities.get_time_zone(code.split("_")[0])
+        logging.warning(
+            f"No time zone for {code} in utils.entities. Using the time zone "
+            f"of its country ({time_zone}). Set it in TIME_ZONES if it differs."
+        )
+        return time_zone
+
+
+def _get_public_holidays(code: str, years: range) -> set:
+    """
+    Get the public holidays of a country or subdivision.
+
+    Parameters
+    ----------
+    code : str
+        The code of the country or subdivision (e.g., PHL_LU).
+    years : range
+        The years of the public holidays.
+
+    Returns
+    -------
+    set
+        The dates of the public holidays, or an empty set if the country
+        or subdivision is not in the holidays package.
+    """
+    country_code = pycountry_convert.country_alpha3_to_country_alpha2(
+        code.split("_")[0]
+    )
+    try:
+        public_holidays = holidays.country_holidays(
+            country_code, subdiv=HOLIDAY_SUBDIVISIONS.get(code), years=years
+        )
+    except NotImplementedError:
+        logging.warning(
+            f"No public holidays for {code} in the holidays package. Only "
+            "Saturdays and Sundays use the weekend shape."
+        )
+        return set()
+    return set(public_holidays)
 
 
 def _get_ukpn_diurnal_profiles_path() -> str:
@@ -183,10 +304,11 @@ def build_hourly_profile(
     hourly_shapes: pandas.DataFrame,
     start_date: str,
     end_date: str,
+    code: str,
     capacity_mw: float | None,
 ) -> pandas.DataFrame:
     """
-    Build the hourly demand profile of the data centres in the Philippines.
+    Build the hourly demand profile of the data centres of a code.
 
     Parameters
     ----------
@@ -196,8 +318,10 @@ def build_hourly_profile(
         The first day of the profile (DATE_FORMAT).
     end_date : str
         The last day of the profile (DATE_FORMAT), included.
+    code : str
+        The code of the country or subdivision (e.g., PHL_LU).
     capacity_mw : float or None
-        The capacity of the data centres of the subdivision.
+        The capacity of the data centres of the country or subdivision.
 
     Returns
     -------
@@ -216,17 +340,15 @@ def build_hourly_profile(
             start,
             end.replace(hour=23),
             freq="h",
-            tz=TIME_ZONE,
+            tz=_get_time_zone(code),
         )
     )
 
     # Get the day type of each hour.
     is_weekend = local_time.dt.dayofweek >= 5
     if TREAT_HOLIDAYS_AS_WEEKENDS:
-        public_holidays = holidays.country_holidays(
-            "PH", years=range(start.year, end.year + 1)
-        )
-        is_weekend |= local_time.dt.date.isin(set(public_holidays))
+        public_holidays = _get_public_holidays(code, range(start.year, end.year + 1))
+        is_weekend |= local_time.dt.date.isin(public_holidays)
 
     profile = pandas.DataFrame(
         {
@@ -246,12 +368,15 @@ def build_hourly_profile(
         columns=["hour", "shape"]
     )
 
-    if capacity_mw is not None and UTILISATION is not None and OCCUPANCY is not None:
-        average_demand = capacity_mw * UTILISATION * PUE * OCCUPANCY
+    utilisation = _get_parameter(UTILISATION, code)
+    occupancy = _get_parameter(OCCUPANCY, code)
+    pue = _get_parameter(PUE, code)
+    if None not in (capacity_mw, utilisation, occupancy, pue):
+        average_demand = capacity_mw * utilisation * pue * occupancy
         profile["Demand (MW)"] = average_demand * profile["Normalised demand"]
         logging.info(
             f"Average demand: {average_demand:.3f} MW "
-            f"({capacity_mw} MW x {UTILISATION} x {OCCUPANCY} x PUE {PUE})."
+            f"({capacity_mw} MW x {utilisation} x {occupancy} x PUE {pue})."
         )
 
     return profile
@@ -294,7 +419,7 @@ def plot_profile(
         profile["Local time"] < profile["Local time"].iloc[0] + pandas.Timedelta(days=14)
     ]
     axes[1].plot(two_weeks["Local time"], two_weeks[column])
-    axes[1].set_xlabel(f"Local time ({TIME_ZONE})")
+    axes[1].set_xlabel(f"Local time ({profile['Local time'].dt.tz})")
     axes[1].set_ylabel(column)
     axes[1].set_title("First two weeks of the profile")
     axes[1].tick_params(axis="x", rotation=30)
@@ -314,20 +439,15 @@ def plot_profile(
 def run() -> None:
     """
     Build and save the hourly demand profile of the data centres of each
-    subdivision of CAPACITY_MW.
+    country or subdivision of CAPACITY_MW.
 
-    Each profile is saved in data/data_centre_demand_profiles/PHL/<YYYY-MM-DD>/ as a
+    Each profile is saved in
+    data/data_centre_demand_profiles/<ISO Alpha-3 code>/<YYYY-MM-DD>/ as a
     CSV and a Parquet file with a figure, named
     <code>_data_centre_demand_<scenario>_<start>_<end>_<YYYYmmdd-HHMMSS>
     (e.g., phl_lu_data_centre_demand_high_suitable_areas_20250101_20251231_
     20260930-120000).
     """
-    # Save the files in a sub-folder of the current date (YYYY-MM-DD).
-    result_directory = os.path.join(
-        RESULT_DIRECTORY, datetime.now().strftime("%Y-%m-%d")
-    )
-    os.makedirs(result_directory, exist_ok=True)
-
     diurnal_profiles_path = _get_ukpn_diurnal_profiles_path()
     logging.info(f"Reading the UKPN diurnal profiles from {diurnal_profiles_path}.")
 
@@ -335,6 +455,7 @@ def run() -> None:
 
     # Name the files with the period of the profile and the current time,
     # so that previous runs are not overwritten.
+    date_current = datetime.now().strftime("%Y-%m-%d")
     time_current = datetime.now().strftime("%Y%m%d-%H%M%S")
     start, end = (
         datetime.strptime(date, DATE_FORMAT).strftime("%Y%m%d")
@@ -345,8 +466,16 @@ def run() -> None:
 
     for code, capacity_mw in CAPACITY_MW.items():
         logging.info(f"Building the hourly profile of {code} ({SCENARIO} scenario).")
-        profile = build_hourly_profile(hourly_shapes, START_DATE, END_DATE, capacity_mw)
+        profile = build_hourly_profile(
+            hourly_shapes, START_DATE, END_DATE, code, capacity_mw
+        )
 
+        # Save the files in a sub-folder of the country and of the
+        # current date (YYYY-MM-DD).
+        result_directory = os.path.join(
+            RESULT_DIRECTORY, code.split("_")[0], date_current
+        )
+        os.makedirs(result_directory, exist_ok=True)
         file_path = os.path.join(
             result_directory,
             f"{code.lower()}_data_centre_demand_{scenario}_{start}_{end}_{time_current}",

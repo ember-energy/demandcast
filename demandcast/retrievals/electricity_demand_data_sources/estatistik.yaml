@@ -1,0 +1,19 @@
+entities:
+  - country_name: Malaysia
+    country_code: MYS
+    start_date: 2016-09-01
+    end_date: today
+  - subdivision_name: Sabah
+    subdivision_code: SAB
+    country_name: Malaysia
+    country_code: MYS
+    start_date: 2016-09-01
+    end_date: today
+    time_zone: Asia/Kuala_Lumpur
+  - subdivision_name: Sarawak
+    subdivision_code: SAR
+    country_name: Malaysia
+    country_code: MYS
+    start_date: 2016-09-01
+    end_date: today
+    time_zone: Asia/Kuala_Lumpur

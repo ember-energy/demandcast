@@ -11,41 +11,42 @@
 
 # - gdp_ppp_per_capita,
 # - temperature.
-variable: annual_electricity_demand_per_capita
+variable: electricity_demand
 
 
 # OPTIONAL - REQUIRED for electricity_demand variable.
 # The acronym of the data source as defined in the retrieval
 # modules (example: "entsoe").
-electricity_data_source: "ngcp"
+electricity_data_source: "gso"
 
 # OPTIONAL.
 # The ISO Alpha-3 code (example: "FRA") or a combination of ISO
 # Alpha-3 code and subdivision code (example: "USA_CAL").
-code: 
+code: "MYS_PEN"
 
 # OPTIONAL.
 # The path to the yaml file containing the list of codes of the
 # countries and subdivisions of interest."
-file: "D:/Modelling/demandcast/demandcast/config/target_subnationals_config.yaml"
-
-# OPTIONAL.
+file: 
+#"D:/Modelling/demandcast/demandcast/config/target_subnationals_config.yaml"
+#"D:/Modelling/demandcast/demandcast/config/target_countries_config.yaml"
+# OPTIONAL."
 # The year of the data to be retrieved.
 year: 
 
 # OPTIONAL.
 # Start year for a range of years of data to be retrieved.
-start_year: 2030
+start_year: 
 
 # OPTIONAL.
 # End year for a range of years of data to be retrieved.
-end_year: 2030
+end_year: 
 
 # OPTIONAL.
 # Scenario of the data to be retrieved.
 # Specify for future years, or else it will download all the available scenarios
 # it is painful to run everything
-scenario: PEP-REF-PSA1
+scenario: #PEP-REF-PSA1
 #Philippines (PHL and its grids): population scenarios PSA1, PSA2, PSA3 (PSA projections); annual_electricity_demand_per_capita scenarios PEP-REF-PSA1..3 and PEP-CES-PSA1..3 (PEP sales x grid-load factor / PSA population).
 #Scenario SPP1-2.6 is the sustainability pathway, but less aggressive than SSP1-1.9. Setting this as default scenario
 #Scenario SSP1-26 for annual_electricity_demand_per_capita

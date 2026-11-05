@@ -1,5 +1,26 @@
 entities:
   - country_name: Vietnam
     country_code: VNM
-    start_date: 2017-12-01
+    start_date: 2022-09-01
     end_date: 2025-12-31
+  - subdivision_name: North
+    subdivision_code: NOR
+    country_name: Vietnam
+    country_code: VNM
+    start_date: 2022-09-01
+    end_date: 2025-12-31
+    time_zone: Asia/Ho_Chi_Minh
+  - subdivision_name: Central
+    subdivision_code: CEN
+    country_name: Vietnam
+    country_code: VNM
+    start_date: 2022-09-01
+    end_date: 2025-12-31
+    time_zone: Asia/Ho_Chi_Minh
+  - subdivision_name: South
+    subdivision_code: SOU
+    country_name: Vietnam
+    country_code: VNM
+    start_date: 2022-09-01
+    end_date: 2025-12-31
+    time_zone: Asia/Ho_Chi_Minh
