@@ -98,6 +98,11 @@ def run_model_training(
         use_validation_set,
     )
 
+    # Without testing and validation sets, all the data is used for
+    # training.
+    if not (reserve_testing_set or use_validation_set):
+        prepared_dataset = {"training": prepared_dataset}
+
     # Define a model name based on timestamp.
     model_name = (
         f"{algorithm.lower()}_model_"

@@ -255,7 +255,8 @@ def _get_files_to_load(
 
     if variable == "electricity demand":
         # For electricity demand, find the folder with the most recent
-        # date as name.
+        # date as name (used as the default path if a file is not found
+        # in any dated folder).
         data_folder = max(
             [
                 os.path.join(data_folder, subfolder)
@@ -317,9 +318,13 @@ def _get_files_to_load(
                     + "."
                 )
         elif variable == "electricity demand":
-            # Add a single file from the most recent dated folder.
+            # Add the most recent version of the file across the dated
+            # subfolders, so that the entities retrieved on different
+            # dates are all found (not only those of the most recent
+            # dated folder).
             files_to_load[entity_code] = [
-                os.path.join(data_folder, file_pattern)
+                utils.config.find_latest_file(folder_key, file_pattern)
+                or os.path.join(data_folder, file_pattern)
             ]
         else:
             # Add the most recent version of the file across the dated
@@ -742,6 +747,23 @@ MAJOR_HOLIDAYS = {
         # Christmas and New Year, from 24 December to 1 January.
         "periods": [((12, 24), (12, 31)), ((1, 1), (1, 1))],
     },
+    "SGP":{
+        # Lunar New Year (both days, and the observed day
+        # if one of them falls on a weekend day).
+        "names":['Chinese New Year'],
+        "periods":[],
+        #Count the eve (1 day before) and the third day (1 day after) of
+        #Lunar New Year, when the load is still lower 7-13% than usual
+        "days_before":1,
+        "days_after":1,
+    },
+    "THA": {
+        # New Year (29 Dec - 3 Jan) and Songkran (12 - 17 Apr), when the
+        # national load drops by 15-35%, against ~10% on a normal Sunday.
+        # The other public holidays drop like a Sunday (other holidays).
+        "names": [],
+        "periods": [((12, 29), (12, 31)), ((1, 1), (1, 3)), ((4, 12), (4, 17))],
+    },
 }
 
 
@@ -802,6 +824,24 @@ def _get_holiday_indicators(partition: pandas.DataFrame) -> pandas.DataFrame:
             for date, name in country_holidays.items()
             if any(major_name in name for major_name in major["names"])
         }
+
+        #Extend the named major holidays by the days before and after them
+        #(e.g., the eve and third day of LNY).
+        #Observed days are not extended, as they are substitutes and 
+        #not the actual dates of the holiday. 
+        days_before = major.get('days_before',0)
+        days_after = major.get('days_after',0)
+
+        if days_before or days_after:
+            for date, name in country_holidays.items():
+                if "observed" in name.lower() or not any(
+                    major_name in name for major_name in major['names']
+                ):
+                    continue
+                for offset in range (-days_before,days_after+1):
+                    major_dates.add(date + datetime.timedelta(days = offset))
+
+
         for year in years:
             for (start_month, start_day), (end_month, end_day) in major[
                 "periods"

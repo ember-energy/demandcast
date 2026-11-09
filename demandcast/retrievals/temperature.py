@@ -184,9 +184,32 @@ def _load_gridded_temperature_data(
     for file_path in temperature_data_file_paths:
         with xarray.open_dataset(file_path) as dataset:
             datasets.append(dataset.load())
-    temperature_data = xarray.combine_by_coords(
-        datasets, combine_attrs="override"
-    )
+
+    # The files can have two layouts: files downloaded for a single
+    # entity keep the original "latitude" and "longitude" coordinates,
+    # while files extracted from the global data (when many entities are
+    # retrieved at once) already have harmonized "x" and "y" coordinates
+    # and can miss an edge column of the bounding box. If the layouts
+    # are mixed, each file is harmonized and its coordinates rounded
+    # before combining, and only the grid cells shared by all files are
+    # kept. The excluded cells are in the buffer around the entity.
+    if len({"x" in dataset.dims for dataset in datasets}) > 1:
+        datasets = [
+            utils.geospatial.harmonize_coords(dataset) for dataset in datasets
+        ]
+        datasets = [
+            dataset.assign_coords(
+                x=dataset["x"].round(6), y=dataset["y"].round(6)
+            )
+            for dataset in datasets
+        ]
+        temperature_data = xarray.combine_by_coords(
+            datasets, combine_attrs="override", join="inner"
+        )
+    else:
+        temperature_data = xarray.combine_by_coords(
+            datasets, combine_attrs="override"
+        )
 
     # Extract the temperature variable.
     if "t2m" in temperature_data:

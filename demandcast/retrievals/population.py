@@ -11,10 +11,40 @@ Description:
     population data is calculated by aggregating gridded population
     data. If national data is available for the parent country, the
     gridded population of the subdivision is scaled so that the
-    subdivisions add up to the national total. For the grids of the
+    subdivisions add up to the national total. 
+    
+    1. Philippines
+
+    For the grids of the
     Philippines, the shares of the subdivisions/regions are instead taken from
     the census population reported by the PSA. The population data is
     saved into CSV and Parquet files.
+
+    2. Thailand
+
+    For Thailand and its four regions (THA_CEN, THA_NOR, THA_NEA, and
+    THA_SOU), the registered population of the National Statistical
+    Office (NSO) is used instead of the gridded population:
+
+    - 2012-2025: the population follows the WB (USE_NSO_NATIONAL_TOTAL = False), both national and by
+      region;
+    - other historical years (before 2012): the national population
+      follows the World Bank, and the population of each region is the
+      national population multiplied by the average share of the region
+      in 2012-2025 (NSO);
+    - future years: the national population follows the IIASA SSP
+      projection, and the population of each region is the national
+      population multiplied by the share of the region in the most
+      recent year of the NSO data (2025), so that the regions continue
+      from their latest share.
+
+    Caveat: the regional shares are frozen at 2025 for all future years. CEN's share has been rising slowly, and that trend isn't carried forward.
+
+    The NSO registered population is about 8-10% lower than the World
+    Bank population, so the national population steps down in 2012 and
+    up in 2026. Set USE_NSO_NATIONAL_TOTAL to False to keep the World
+    Bank national population in 2012-2025 and use the NSO only to split
+    it into regions (with the NSO share of each year).
 """
 
 import logging
@@ -30,8 +60,14 @@ import utils.time_series
 from tqdm import tqdm
 
 import retrievals.socio_economic_data_sources.iiasa as iiasa
+import retrievals.socio_economic_data_sources.nso_thailand as nso_thailand
 import retrievals.socio_economic_data_sources.psa_philippines as psa_philippines
 import retrievals.socio_economic_data_sources.world_bank as world_bank
+
+# Define whether the national population of Thailand follows the NSO in
+# the years of the NSO data (True), or the World Bank (False). In both
+# cases, the NSO is used to split the national population into regions.
+USE_NSO_NATIONAL_TOTAL = False
 
 
 def get_available_scenarios() -> list[str]:
@@ -192,6 +228,97 @@ def _get_share_of_national_census_population(
     )
 
 
+def uses_nso_population(code: str) -> bool:
+    """
+    Check if the population of a code comes from the NSO of Thailand.
+
+    Parameters
+    ----------
+    code : str
+        The code of the country or subdivision of interest.
+
+    Returns
+    -------
+    bool
+        True for Thailand and its regions.
+    """
+    return code == nso_thailand.CODE or code in nso_thailand.get_codes()
+
+
+def _get_historical_population_of_thailand(
+    code: str,
+    global_historical_population: pandas.DataFrame,
+    years: list[int],
+) -> pandas.Series:
+    """
+    Get the historical population of Thailand or one of its regions.
+
+    In the years of the NSO data (2012-2025), the population follows the
+    NSO (or, if USE_NSO_NATIONAL_TOTAL is False, the World Bank national
+    population split with the NSO share of each region in that year). In
+    the other years, the national population follows the World Bank, and
+    the population of a region is the national population multiplied by
+    the average share of the region in the NSO data.
+
+    Parameters
+    ----------
+    code : str
+        The code of Thailand or of one of its regions.
+    global_historical_population : pandas.DataFrame
+        The global historical population data from the World Bank.
+    years : list[int]
+        The years of interest.
+
+    Returns
+    -------
+    pandas.Series
+        The historical population, with the years as index.
+    """
+    nso_population = nso_thailand.read_population()
+    nso_years = [year for year in years if year in nso_population.columns]
+
+    # Get the national population: the World Bank, replaced by the NSO in
+    # the years of the NSO data if USE_NSO_NATIONAL_TOTAL. The last
+    # available value is held for later years.
+    national_population = global_historical_population.loc[
+        nso_thailand.CODE
+    ].dropna()
+    if USE_NSO_NATIONAL_TOTAL:
+        national_population = nso_population.loc[nso_thailand.CODE].combine_first(
+            national_population
+        )
+    national_population = national_population.reindex(
+        sorted(set(national_population.index) | set(years))
+    ).ffill()
+
+    if code == nso_thailand.CODE:
+        return national_population.reindex(years)
+
+    logging.info(
+        f"Scaling the national population to {code} using the NSO shares "
+        f"(NSO population in {nso_years})."
+    )
+
+    # Use the average NSO share of the region in all years, and the NSO
+    # population (or share) of the region in the years of the NSO data.
+    population = (
+        national_population.reindex(years)
+        * nso_thailand.read_average_shares()[code]
+    )
+    if USE_NSO_NATIONAL_TOTAL:
+        population.loc[nso_years] = nso_population.loc[code, nso_years]
+    else:
+        shares_of_year = (
+            nso_population.loc[code, nso_years]
+            / nso_population.loc[nso_thailand.CODE, nso_years]
+        )
+        population.loc[nso_years] = (
+            national_population.reindex(nso_years) * shares_of_year
+        )
+
+    return population
+
+
 def _extract_historical_population(
     code: str,
     global_historical_population: pandas.DataFrame,
@@ -200,6 +327,12 @@ def _extract_historical_population(
     available_historical_years_of_gridded_data: list[int],
 ):
     country_code = code.split("_")[0]
+
+    # For Thailand and its regions, use the NSO and the World Bank.
+    if uses_nso_population(code):
+        return _get_historical_population_of_thailand(
+            code, global_historical_population, requested_historical_years
+        )
 
     # Check if code is in the historical population data. If not, it
     # means that it is a subdivision or a country not included in the
@@ -388,6 +521,21 @@ def _extract_future_population(
         # For the Philippines and its grids, use the projection of the
         # PSA.
         return get_future_population_from_psa(code, scenario)
+    elif code in nso_thailand.get_codes():
+        # For the regions of Thailand, scale the IIASA projection of
+        # Thailand by the NSO share of the region in the most recent year
+        # of the NSO data, so that the regions continue from it.
+        latest_shares = nso_thailand.read_latest_shares()
+        logging.info(
+            f"Scaling the IIASA population of {country_code} to {code} using "
+            f"the NSO shares of {latest_shares.name}."
+        )
+        future_population = (
+            iiasa.extract_and_interpolate(
+                global_future_population, country_code, scenario
+            )
+            * latest_shares[code]
+        )
     elif code in global_future_population.index:
         # Check if code is in the future population data. If so, it
         # means that it is an ISO Alpha-3 code of a country.

@@ -183,7 +183,15 @@ def train(
 
     # Prepare evaluation set if the validation dataset is provided.
     eval_set = None
-    if "validation" in prepared_dataset:
+    if "validation" not in prepared_dataset:
+        # Early stopping needs a validation set, so all n_estimators
+        # trees are trained.
+        logging.warning(
+            "No validation set: early stopping is disabled and all "
+            f"{xgb_model.get_params()['n_estimators']} trees are trained."
+        )
+        xgb_model.set_params(early_stopping_rounds=None)
+    else:
         y_val = prepared_dataset['validation']['target'] * scale_factor
         eval_set = [
             (

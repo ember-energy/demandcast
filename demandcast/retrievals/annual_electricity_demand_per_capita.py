@@ -36,8 +36,64 @@ Description:
     (PSA1, PSA2, or PSA3), e.g., PEP-REF-PSA2. Use the same PSA
     scenario for the population when assembling the data, so that the
     annual demand is retrieved.
+
+    2.2. Singapore
+
+    Historical data uses the default setting (average of Ember and the
+    World Bank, up to the last historical year).
+
+    For the future, Singapore follows:
+    - 2026 - 2034: the projected generation (GWh) of the Energy Market
+      Authority (EMA), "Electricity Demand and Supply Outlook 2025",
+      page 5, Table 1b, to meet either:
+      - the Base Electricity Demand Forecast (Base EDF): EMA-BASE-..., or
+      - the Upper-bound EDF: EMA-UPPER-...
+      It is divided by the projected IIASA SSP population.
+    - 2035 onwards: the value of 2034 is extrapolated with the growth
+      rates of the IAMC scenario.
+    - Any year between the last historical year and 2026: the last
+      historical value is extrapolated with the growth rates of the
+      IAMC scenario.
+    The scenarios are named after the EMA scenario and the IAMC
+    scenario, e.g., EMA-BASE-SSP2-45 or EMA-UPPER-SSP2-45. The SSP of
+    the IAMC scenario is also used for the population, so use the same
+    SSP for the population when assembling the data
+    (scenario_for_population: SSP2).
+
+    2.3. Thailand
+
+    Historical data of Thailand uses the default setting (average of
+    Ember and the World Bank, up to the last historical year). For the
+    regions (THA_CEN, THA_NOR, THA_NEA, THA_SOU), no regional historical
+    demand is available, so the national demand of Ember (TWh) is
+    multiplied by the energy share of the region in the EGAT demand of
+    2025 (the same share for all historical years, see
+    electricity_demand_data_sources/egat.py), and divided by the
+    historical population of the region (retrievals.population: World
+    Bank total x NSO shares).
+
+    For the future, Thailand and its regions follow:
+    - 2026 - 2037: the projected annual electricity demand (GWh) of the
+      draft Power Development Plan 2024 (PDP2024) of the Energy Policy
+      and Planning Office (EPPO), BASE case, sheet "Regional_Energy".
+      The national value is used as is. The regional values (derived
+      by EPPO peak shares) are scaled by the EGAT share / EPPO share of
+      each region in 2025 and rescaled to add up to the national value,
+      see socio_economic_data_sources/eppo_thailand.py. It is divided by
+      the projected population of retrievals.population (IIASA SSP,
+      scaled to the regions by the NSO shares of the latest year).
+    - 2038 onwards: the value of 2037 is extrapolated with the growth
+      rates of the IAMC scenario.
+    - Any year between the last historical year and 2026: the last
+      historical value is extrapolated with the growth rates of the
+      IAMC scenario.
+    The scenarios are named after the EPPO and the IAMC scenario, e.g.,
+    EPPO-SSP2-45. The SSP of the IAMC scenario is also used for the
+    population, so use the same SSP for the population when assembling
+    the data (scenario_for_population: SSP2).
 """
 
+import functools
 import logging
 import os
 
@@ -51,6 +107,8 @@ from tqdm import tqdm
 import retrievals.population
 from retrievals.socio_economic_data_sources import (
     doe_philippines,
+    ema_singapore,
+    eppo_thailand,
     pep_philippines,
     psa_philippines,
 )
@@ -58,10 +116,35 @@ import retrievals.socio_economic_data_sources.ember as ember
 import retrievals.socio_economic_data_sources.iiasa as iiasa
 import retrievals.socio_economic_data_sources.world_bank as world_bank
 
+# Define the first year of the EMA projection used for Singapore.
+FIRST_YEAR_OF_EMA_PROJECTION = 2026
+
+# Define the first and last years of the EPPO projection used for
+# Thailand and its regions.
+FIRST_YEAR_OF_EPPO_PROJECTION = 2026
+LAST_YEAR_OF_EPPO_PROJECTION = 2037
+
 
 def get_available_scenarios() -> list[str]:
     """
     Get the available future scenarios.
+
+    Returns
+    -------
+    list[str]
+        The available IAMC scenarios and the country-specific scenarios.
+    """
+    return (
+        get_iamc_scenarios()
+        + get_pep_scenarios()
+        + get_ema_scenarios()
+        + get_eppo_scenarios()
+    )
+
+
+def get_iamc_scenarios() -> list[str]:
+    """
+    Get the IAMC scenarios.
 
     Returns
     -------
@@ -95,7 +178,296 @@ def get_available_scenarios() -> list[str]:
         "SSP5-34",
         "SSP5-45",
         "SSP5-60",
-    ] + get_pep_scenarios()
+    ]
+
+
+def get_eppo_scenarios() -> list[str]:
+    """
+    Get the scenarios for Thailand based on the EPPO projection.
+
+    Returns
+    -------
+    list[str]
+        The IAMC scenarios prefixed with EPPO. The IAMC scenario gives
+        the growth rates after the EPPO projection, and its SSP the
+        population used to convert the demand to demand per capita.
+    """
+    return [f"EPPO-{scenario}" for scenario in get_iamc_scenarios()]
+
+
+def uses_eppo_projection(code: str) -> bool:
+    """
+    Check if the future demand of a code comes from the EPPO.
+
+    Parameters
+    ----------
+    code : str
+        The code of the country or subdivision of interest.
+
+    Returns
+    -------
+    bool
+        True for Thailand and its regions.
+    """
+    return code in eppo_thailand.get_codes()
+
+
+def get_future_data_from_eppo(
+    code: str,
+    scenario: str,
+    growth_rates: pandas.DataFrame,
+    last_historical_value: float,
+    last_historical_year: int,
+) -> pandas.Series:
+    """
+    Get the future electricity demand per capita from the EPPO.
+
+    The projected demand of the EPPO is divided by the projected
+    population of retrievals.population from FIRST_YEAR_OF_EPPO_PROJECTION
+    to LAST_YEAR_OF_EPPO_PROJECTION. Before, the last historical value is
+    extrapolated with the growth rates of the IAMC scenario. After, the
+    value of LAST_YEAR_OF_EPPO_PROJECTION is extrapolated with them.
+
+    Parameters
+    ----------
+    code : str
+        The code of Thailand or one of its regions.
+    scenario : str
+        The scenario, with the format EPPO-{IAMC scenario}.
+    growth_rates : pandas.DataFrame
+        The IIASA growth rates of electricity demand per capita.
+    last_historical_value : float
+        The last historical electricity demand per capita in kWh.
+    last_historical_year : int
+        The last historical year.
+
+    Returns
+    -------
+    pandas.Series
+        The future electricity demand per capita in kWh, with the years
+        from the year after the last historical year to 2100 as index.
+    """
+    iamc_scenario = scenario.split("-", 1)[1]
+    population_scenario = iamc_scenario.split("-")[0].upper()
+    iso_alpha_3_code = code.split("_")[0]
+
+    # Get the annual electricity demand of the EPPO in GWh.
+    demand = eppo_thailand.read_projected_demand().loc[code]
+    demand = demand[
+        (demand.index >= FIRST_YEAR_OF_EPPO_PROJECTION)
+        & (demand.index <= LAST_YEAR_OF_EPPO_PROJECTION)
+        & (demand.index > last_historical_year)
+    ]
+
+    # Get the projected population, as in retrievals.population.
+    population = retrievals.population._extract_future_population(
+        code, _read_future_population(), [], [], [], population_scenario
+    )
+
+    # Calculate the electricity demand per capita, converting GWh to
+    # kWh.
+    eppo_demand_per_capita = (demand * 1e6 / population).dropna()
+
+    return _extend_with_iamc_growth_rates(
+        eppo_demand_per_capita,
+        iso_alpha_3_code,
+        iamc_scenario,
+        growth_rates,
+        last_historical_value,
+        last_historical_year,
+    )
+
+
+def _extend_with_iamc_growth_rates(
+    projection: pandas.Series,
+    iso_alpha_3_code: str,
+    iamc_scenario: str,
+    growth_rates: pandas.DataFrame,
+    last_historical_value: float,
+    last_historical_year: int,
+) -> pandas.Series:
+    """
+    Extend a projection of electricity demand per capita to 2100.
+
+    Before the projection, the last historical value is extrapolated
+    with the growth rates of the IAMC scenario. After the projection,
+    its last value is extrapolated with them.
+
+    Parameters
+    ----------
+    projection : pandas.Series
+        The projected electricity demand per capita in kWh, with the
+        years as index.
+    iso_alpha_3_code : str
+        The ISO Alpha-3 code of the country whose growth rates are used.
+    iamc_scenario : str
+        The IAMC scenario of the growth rates, e.g., SSP2-45.
+    growth_rates : pandas.DataFrame
+        The IIASA growth rates of electricity demand per capita.
+    last_historical_value : float
+        The last historical electricity demand per capita in kWh.
+    last_historical_year : int
+        The last historical year.
+
+    Returns
+    -------
+    pandas.Series
+        The future electricity demand per capita in kWh, with the years
+        from the year after the last historical year to 2100 as index.
+    """
+    parts = []
+
+    # Extrapolate the last historical value to the years before the
+    # projection.
+    years_before = list(range(last_historical_year + 1, projection.index.min()))
+    if years_before:
+        parts.append(
+            iiasa.extrapolate(
+                growth_rates,
+                iso_alpha_3_code,
+                iamc_scenario,
+                last_historical_value,
+                last_historical_year,
+                years_before,
+            )
+        )
+
+    parts.append(projection)
+
+    # Extrapolate the last value of the projection to the years after
+    # it.
+    last_projected_year = projection.index.max()
+    years_after = list(range(last_projected_year + 1, 2101))
+    if years_after:
+        parts.append(
+            iiasa.extrapolate(
+                growth_rates,
+                iso_alpha_3_code,
+                iamc_scenario,
+                projection.loc[last_projected_year],
+                last_projected_year,
+                years_after,
+            )
+        )
+
+    return pandas.concat(parts).sort_index()
+
+
+def get_ema_scenarios() -> list[str]:
+    """
+    Get the scenarios for Singapore based on the EMA projection.
+
+    Returns
+    -------
+    list[str]
+        The combinations of the EMA scenario and the IAMC scenario. The
+        IAMC scenario gives the growth rates after the EMA projection,
+        and its SSP the population used to convert the demand to demand
+        per capita.
+    """
+    return [
+        f"EMA-{ema_scenario}-{iamc_scenario}"
+        for ema_scenario in ema_singapore.get_scenarios()
+        for iamc_scenario in get_iamc_scenarios()
+    ]
+
+
+def uses_ema_projection(code: str) -> bool:
+    """
+    Check if the future demand of a code comes from the EMA.
+
+    Parameters
+    ----------
+    code : str
+        The code of the country or subdivision of interest.
+
+    Returns
+    -------
+    bool
+        True for Singapore.
+    """
+    return code == ema_singapore.CODE
+
+
+@functools.lru_cache(maxsize=1)
+def _read_future_population() -> pandas.DataFrame:
+    """
+    Read the future population of IIASA once.
+
+    Returns
+    -------
+    pandas.DataFrame
+        The future population data of IIASA.
+    """
+    return iiasa.read("population")
+
+
+def get_future_data_from_ema(
+    code: str,
+    scenario: str,
+    growth_rates: pandas.DataFrame,
+    last_historical_value: float,
+    last_historical_year: int,
+) -> pandas.Series:
+    """
+    Get the future electricity demand per capita from the EMA.
+
+    The projected generation to meet the EDF of the EMA is used as the
+    annual electricity demand from FIRST_YEAR_OF_EMA_PROJECTION to the
+    last year of the EMA projection, and divided by the projected
+    population of IIASA (the same projection as in
+    retrievals.population). Before, the last historical value is
+    extrapolated with the growth rates of the IAMC scenario. After, the
+    value of the last year of the EMA projection is extrapolated with
+    them.
+
+    Parameters
+    ----------
+    code : str
+        The code of Singapore.
+    scenario : str
+        The scenario, with the format EMA-{EMA scenario}-{IAMC
+        scenario}, e.g., EMA-BASE-SSP2-45.
+    growth_rates : pandas.DataFrame
+        The IIASA growth rates of electricity demand per capita.
+    last_historical_value : float
+        The last historical electricity demand per capita in kWh.
+    last_historical_year : int
+        The last historical year.
+
+    Returns
+    -------
+    pandas.Series
+        The future electricity demand per capita in kWh, with the years
+        from the year after the last historical year to 2100 as index.
+    """
+    __, ema_scenario, iamc_scenario = scenario.upper().split("-", 2)
+    population_scenario = iamc_scenario.split("-")[0]
+
+    # Get the annual electricity demand in GWh.
+    demand = ema_singapore.read_projected_generation(ema_scenario)
+    demand = demand[
+        (demand.index >= FIRST_YEAR_OF_EMA_PROJECTION)
+        & (demand.index > last_historical_year)
+    ]
+
+    # Get the projected population.
+    population = iiasa.extract_and_interpolate(
+        _read_future_population(), code, population_scenario
+    )
+
+    # Calculate the electricity demand per capita, converting GWh to
+    # kWh.
+    ema_demand_per_capita = (demand * 1e6 / population).dropna()
+
+    return _extend_with_iamc_growth_rates(
+        ema_demand_per_capita,
+        code,
+        iamc_scenario,
+        growth_rates,
+        last_historical_value,
+        last_historical_year,
+    )
 
 
 def get_pep_scenarios() -> list[str]:
@@ -144,17 +516,20 @@ def get_available_scenarios_for_code(code: str) -> list[str]:
     Returns
     -------
     list[str]
-        The PEP-based scenarios for the Philippines and its grids, and
-        the IAMC scenarios for the other countries and subdivisions.
+        The PEP-based scenarios for the Philippines and its grids, the
+        EMA-based scenarios for Singapore, and the IAMC scenarios for
+        the other countries and subdivisions.
     """
     if uses_pep_projection(code):
         return get_pep_scenarios()
 
-    return [
-        scenario
-        for scenario in get_available_scenarios()
-        if scenario not in get_pep_scenarios()
-    ]
+    if uses_ema_projection(code):
+        return get_ema_scenarios()
+
+    if uses_eppo_projection(code):
+        return get_eppo_scenarios()
+
+    return get_iamc_scenarios()
 
 
 def get_future_data_from_pep(code: str, scenario: str) -> pandas.Series:
@@ -285,6 +660,52 @@ def get_regional_historical_data(
     return (gross_generation * 1000 / population).dropna()
 
 
+def get_regional_historical_data_from_eppo(
+    code: str,
+    national_electricity_demand: pandas.DataFrame,
+    global_historical_population: pandas.DataFrame | None = None,
+) -> pandas.Series:
+    """
+    Get the historical electricity demand per capita of a Thai region.
+
+    The national demand of Ember is multiplied by the energy share of
+    the region in the EGAT demand of eppo_thailand.SHARE_YEAR and
+    divided by the historical population of the region.
+
+    Parameters
+    ----------
+    code : str
+        The code of the region of Thailand.
+    national_electricity_demand : pandas.DataFrame
+        The national electricity demand of Ember in TWh, with the ISO
+        Alpha-3 codes as index and the years as columns.
+    global_historical_population : pandas.DataFrame | None, optional
+        The global historical population data from the World Bank.
+
+    Returns
+    -------
+    pandas.Series
+        The historical electricity demand per capita in kWh.
+    """
+    # Get the national demand and split it into the region.
+    national_demand = national_electricity_demand.loc[
+        code.split("_")[0]
+    ].dropna()
+    years = national_demand.index.tolist()
+    regional_demand = national_demand * eppo_thailand.get_energy_share(
+        code, years
+    )
+
+    # Get the population of the region for the same years.
+    population = retrievals.population.get_historical_population(
+        code, years, global_historical_population
+    )
+
+    # Calculate the electricity demand per capita, converting TWh to
+    # kWh.
+    return (regional_demand * 1e9 / population).dropna()
+
+
 def run_data_retrieval(
     code: str | None,
     file: str | None,
@@ -351,6 +772,12 @@ def run_data_retrieval(
         )
         global_historical_population = world_bank.download("population")
 
+    # If any region of Thailand is of interest, download the national
+    # demand of Ember and the population data.
+    if any(uses_eppo_projection(code) and "_" in code for code in codes):
+        national_electricity_demand = ember.download_electricity_demand()
+        global_historical_population = world_bank.download("population")
+
     # Loop over the countries and subdivisions.
     for code in tqdm(codes, desc="Countries and subdivisions"):
         # Get the ISO Alpha-3 code of the country itself or the country
@@ -406,6 +833,20 @@ def run_data_retrieval(
                     regional_electricity_demand_per_capita,
                 ]
             )
+        elif uses_eppo_projection(code) and "_" in code:
+            # Split the national demand of Ember into the region with
+            # the energy share of the region in the EGAT demand.
+            logging.info(
+                f"Using the national demand of Ember and the EGAT energy "
+                f"share of {eppo_thailand.SHARE_YEAR} for {code}."
+            )
+            historical_electricity_demand_per_capita = (
+                get_regional_historical_data_from_eppo(
+                    code,
+                    national_electricity_demand,
+                    global_historical_population,
+                )
+            )
 
         # Get the years of available historical data.
         available_historical_years = (
@@ -424,7 +865,7 @@ def run_data_retrieval(
         scenario_of_code = (
             scenario
             if scenario is None
-            or scenario.upper() in available_scenarios
+            or scenario.upper() in [s.upper() for s in available_scenarios]
             else None
         )
         if scenario_of_code is None:
@@ -564,6 +1005,41 @@ def run_data_retrieval(
                         # the PSA.
                         future_electricity_demand_per_capita = (
                             get_future_data_from_pep(code, future_scenario)
+                        )
+                    elif uses_ema_projection(code):
+                        # Calculate the future electricity demand per
+                        # capita from the projected generation of the
+                        # EMA and the projected population of IIASA,
+                        # extended with the growth rates of the IAMC
+                        # scenario.
+                        last_historical_year = max(available_historical_years)
+                        future_electricity_demand_per_capita = (
+                            get_future_data_from_ema(
+                                code,
+                                future_scenario,
+                                global_future_electricity_demand_per_capita_growth_rates,
+                                historical_electricity_demand_per_capita.loc[
+                                    last_historical_year
+                                ],
+                                last_historical_year,
+                            )
+                        )
+                    elif uses_eppo_projection(code):
+                        # Calculate the future electricity demand per
+                        # capita from the projected demand of the EPPO
+                        # and the projected population, extended with
+                        # the growth rates of the IAMC scenario.
+                        last_historical_year = max(available_historical_years)
+                        future_electricity_demand_per_capita = (
+                            get_future_data_from_eppo(
+                                code,
+                                future_scenario,
+                                global_future_electricity_demand_per_capita_growth_rates,
+                                historical_electricity_demand_per_capita.loc[
+                                    last_historical_year
+                                ],
+                                last_historical_year,
+                            )
                         )
                     else:
                         # Get the last year and value of the historical
