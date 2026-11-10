@@ -9,8 +9,8 @@ and Indonesia (`IDN`).
 
 More detail on the Philippines and on data centres is in:
 
-- [README_PHL_subnational.md](../retrievals/README_PHL_subnational.md)
-- [README_data_centre_demand.md](../retrievals/README_data_centre_demand.md)
+- [README_PHL_subnational.md](..docs/README_PHL_subnational.md)
+- [README_data_centre_demand.md](..docs/README_data_centre_demand.md)
 
 ## Contents
 
