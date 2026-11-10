@@ -25,8 +25,23 @@ Description:
     - contracted (grid) capacity x utilisation, with PUE = 1; or
     - IT capacity x IT utilisation x PUE.
 
+    The capacity is the commissioned IT capacity of the data centres of
+    each grid node of COUNTRY, for SCENARIO (Low, Mid, High, or Suitable
+    sites) and YEAR (2026, the existing capacity, or 2030, only the
+    capacity added between 2026 and 2030), read from
+    "DC Demand Scenarios - ASEAN.xlsx" with
+    retrievals/socio_economic_data_sources/dc_scenarios.py. By default
+    (USE_WORKBOOK_PARAMETERS), the occupancy, utilisation, and PUE are
+    also those of the workbook for COUNTRY and SCENARIO, so that the
+    average demand is the average grid draw of the workbook:
+
+        IT capacity x occupancy x utilisation x PUE.
+
+    YEAR only selects the capacity: the calendar of the profile (week
+    days and public holidays) is set by START_DATE and END_DATE.
+
     The countries and subdivisions are the keys of CAPACITY_MW, with the
-    codes of demandcast: the ISO Alpha-3 code of the country (e.g., PHL),
+    codes of demandcast: the ISO Alpha-3 code of the country (e.g., SGP),
     optionally followed by the code of the subdivision (e.g., PHL_LU).
     The local time zone of each code is taken from utils.entities, unless
     it is set in TIME_ZONES, and the public holidays from the holidays
@@ -37,7 +52,12 @@ Description:
 
     Usage (from the demandcast folder):
 
-        uv run retrievals/electricity_demand_data_sources/phl_data_centre_demand.py
+        uv run retrievals/electricity_demand_data_sources/iso_data_centre_demand.py
+
+    By default, run_all() builds the profiles of the capacity added by
+    2030 for all the scenarios, countries, and grid nodes of the
+    workbook (skipping the grid nodes without capacity). Call run()
+    instead to build only the profiles of SCENARIO, YEAR, and COUNTRY.
 """  # noqa: W505
 
 import logging
@@ -59,6 +79,7 @@ DEMANDCAST_DIRECTORY = os.path.dirname(
 sys.path.insert(0, DEMANDCAST_DIRECTORY)
 
 import utils.entities  # noqa: E402
+from retrievals.socio_economic_data_sources import dc_scenarios  # noqa: E402
 
 # Define the first and last day of the profile (DD-MM-YYYY, inclusive).
 START_DATE = "01-01-2025"
@@ -73,21 +94,6 @@ DC_TYPE_WEIGHTS = {"Co-located": 1.0, "Enterprise": 0.0}
 # data, bank holidays are close to weekends.
 TREAT_HOLIDAYS_AS_WEEKENDS = True
 
-# Define the countries or subdivisions (demandcast codes, e.g., PHL or
-# PHL_LU) and the capacity of their data centres (MW). A profile is
-# built for each code. If a capacity is None, only the normalised
-# profile is saved.
-CAPACITY_MW = {
-    "IDN_JAW": 373.5,
-    "IDN_BTM": 87.1,
-    "IDN_SUM": 3.4,
-    "IDN_KAL": 3.6,
-    "IDN_SUL": 0,
-    "IDN_NUS": 0,
-    "IDN_MAL": 0,
-    "IDN_PAP": 0,
-}
-
 # Define the time zones (e.g., "Asia/Manila") of the codes whose time
 # zone is not found, or is wrong, in utils.entities.
 TIME_ZONES: dict[str, str] = {}
@@ -97,17 +103,46 @@ TIME_ZONES: dict[str, str] = {}
 # use the national public holidays.
 HOLIDAY_SUBDIVISIONS: dict[str, str] = {}
 
+# Define the scenario, the year, and the country of the capacity of the
+# data centres, read from "DC Demand Scenarios - ASEAN.xlsx" (see
+# retrievals/socio_economic_data_sources/dc_scenarios.py). The scenario
+# and the year are added to the name of the saved files.
+# - SCENARIO: "Low", "Mid", "High", or "Suitable sites".
+# - YEAR: 2026 (existing capacity) or 2030 (only the capacity added by
+#   2030, without the existing capacity).
+# - COUNTRY: PHL, IDN, MYS, SGP, THA, or VNM.
+SCENARIO = "Suitable sites"
+YEAR = 2030
+COUNTRY = "SGP"
+
+# Define the countries or subdivisions (demandcast codes, e.g., PHL_LU)
+# and the commissioned IT capacity of their data centres (MW): one
+# profile is built for each grid node of COUNTRY (e.g., PHL_LU, PHL_VI,
+# and PHL_MI). If a capacity is None, only the normalised profile is
+# saved.
+CAPACITY_MW: dict[str, float | None] = dc_scenarios.get_capacities(
+    SCENARIO, YEAR, COUNTRY
+)
+
+# Define whether the occupancy, utilisation, and PUE are taken from the
+# workbook, for COUNTRY and SCENARIO (True), or from the values below
+# (False).
+USE_WORKBOOK_PARAMETERS = True
+
 # Define the parameters of the average demand of the data centres,
 # either as one value for all codes or as a dictionary by code. If
 # UTILISATION or OCCUPANCY is None, only the normalised profile is
 # saved. Use PUE = 1 if CAPACITY_MW is the contracted (grid) capacity,
-# and the PUE of the country if CAPACITY_MW is the IT capacity.
+# and the PUE of the country if CAPACITY_MW is the IT capacity (as in
+# the workbook).
 OCCUPANCY: float | dict[str, float] | None = 0.85
 UTILISATION: float | dict[str, float] | None = 0.72
 PUE: float | dict[str, float] = 1.55
-# Define the scenario of the capacity: "Low", "Mid", "High", or
-# "High suitable areas". It is added to the name of the saved files.
-SCENARIO = "High suitable areas"
+if USE_WORKBOOK_PARAMETERS:
+    _parameters = dc_scenarios.get_conversion_parameters(SCENARIO, COUNTRY)
+    OCCUPANCY = _parameters["Occupancy"]
+    UTILISATION = _parameters["Utilisation"]
+    PUE = _parameters["PUE"]
 
 # Define the folder of the UKPN results.
 UKPN_DIRECTORY = os.path.join(
@@ -121,7 +156,6 @@ UKPN_DATE = None
 # Define the folder where the profiles are saved, in a sub-folder of the
 # ISO Alpha-3 code of the country (e.g., PHL).
 RESULT_DIRECTORY = UKPN_DIRECTORY
-
 
 def _get_parameter(
     value: float | dict[str, float] | None, code: str
@@ -428,7 +462,8 @@ def plot_profile(
         ax.grid(True, linestyle="--", alpha=0.6)
     weights = ", ".join(f"{t}: {w}" for t, w in DC_TYPE_WEIGHTS.items())
     fig.suptitle(
-        f"{code} data centres, {SCENARIO} scenario: hourly demand profile ({weights})",
+        f"{code} data centres, {SCENARIO} scenario, {YEAR} capacity: "
+        f"hourly demand profile ({weights})",
         fontweight="bold",
     )
     fig.tight_layout()
@@ -444,9 +479,9 @@ def run() -> None:
     Each profile is saved in
     data/data_centre_demand_profiles/<ISO Alpha-3 code>/<YYYY-MM-DD>/ as a
     CSV and a Parquet file with a figure, named
-    <code>_data_centre_demand_<scenario>_<start>_<end>_<YYYYmmdd-HHMMSS>
-    (e.g., phl_lu_data_centre_demand_high_suitable_areas_20250101_20251231_
-    20260930-120000).
+    <code>_data_centre_demand_<scenario>_<year>_<start>_<end>_<YYYYmmdd-HHMMSS>
+    where <year> is the year of the capacity (e.g.,
+    phl_lu_data_centre_demand_high_2030_20250101_20251231_20260930-120000).
     """
     diurnal_profiles_path = _get_ukpn_diurnal_profiles_path()
     logging.info(f"Reading the UKPN diurnal profiles from {diurnal_profiles_path}.")
@@ -465,7 +500,10 @@ def run() -> None:
     scenario = re.sub(r"\W+", "_", SCENARIO.strip().lower()).strip("_")
 
     for code, capacity_mw in CAPACITY_MW.items():
-        logging.info(f"Building the hourly profile of {code} ({SCENARIO} scenario).")
+        logging.info(
+            f"Building the hourly profile of {code} ({SCENARIO} scenario, "
+            f"{YEAR} capacity: {capacity_mw} MW)."
+        )
         profile = build_hourly_profile(
             hourly_shapes, START_DATE, END_DATE, code, capacity_mw
         )
@@ -478,7 +516,8 @@ def run() -> None:
         os.makedirs(result_directory, exist_ok=True)
         file_path = os.path.join(
             result_directory,
-            f"{code.lower()}_data_centre_demand_{scenario}_{start}_{end}_{time_current}",
+            f"{code.lower()}_data_centre_demand_{scenario}_{YEAR}_"
+            f"{time_current}",
         )
         profile.to_csv(f"{file_path}.csv", index=False)
         profile.to_parquet(f"{file_path}.parquet", index=False)
@@ -490,9 +529,75 @@ def run() -> None:
         )
 
 
+def run_all(
+    year: int = 2030,
+    scenarios: list[str] | None = None,
+    countries: list[str] | None = None,
+    skip_zero_capacity: bool = True,
+) -> None:
+    """
+    Build and save the profiles of all scenarios and countries.
+
+    For each scenario and country, the capacity and the conversion
+    parameters are read from the workbook, and run() saves one profile
+    for each grid node of the country.
+
+    Parameters
+    ----------
+    year : int, optional
+        The year of the capacity: 2026 (existing) or 2030 (added by
+        2030).
+    scenarios : list[str], optional
+        The scenarios. By default, all the scenarios of the workbook.
+    countries : list[str], optional
+        The ISO Alpha-3 codes of the countries. By default, all the
+        countries of the workbook.
+    skip_zero_capacity : bool, optional
+        Whether to skip the grid nodes without capacity, whose profile
+        would only contain zeros.
+    """
+    # The settings are module-level variables read by run() and the
+    # functions it calls, so they are reassigned for each combination.
+    global SCENARIO, YEAR, COUNTRY, CAPACITY_MW, OCCUPANCY, UTILISATION, PUE
+
+    scenarios = scenarios or dc_scenarios.SCENARIOS
+    countries = countries or list(dc_scenarios.NODES)
+
+    for scenario in scenarios:
+        for country in countries:
+            SCENARIO, YEAR, COUNTRY = scenario, year, country
+
+            CAPACITY_MW = dc_scenarios.get_capacities(scenario, year, country)
+            if skip_zero_capacity:
+                CAPACITY_MW = {
+                    code: mw for code, mw in CAPACITY_MW.items() if mw > 0
+                }
+            if not CAPACITY_MW:
+                logging.info(
+                    f"Skipping {country} ({scenario} scenario, {year}): no "
+                    "grid node with capacity."
+                )
+                continue
+
+            if USE_WORKBOOK_PARAMETERS:
+                parameters = dc_scenarios.get_conversion_parameters(
+                    scenario, country
+                )
+                OCCUPANCY = parameters["Occupancy"]
+                UTILISATION = parameters["Utilisation"]
+                PUE = parameters["PUE"]
+
+            logging.info(f"Running {country}, {scenario} scenario, {year}.")
+            run()
+
+
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
     )
     logging.getLogger("matplotlib").setLevel(logging.WARNING)
-    run()
+
+    # Build the profiles of the capacity added by 2030 for all scenarios,
+    # countries, and grid nodes. Use run() instead to build only the
+    # profiles of SCENARIO, YEAR, and COUNTRY defined above.
+    run_all(year=2030)

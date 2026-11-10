@@ -2,10 +2,14 @@
 
 # Define the name of the scripts that generate the shapefiles.
 scripts="cenace \
+egat \
 eia \
+esdm \
+gso \
 kansaitd \
 neso \
 ngcp \
+nsmo \
 ons \
 tepco"
 

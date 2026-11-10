@@ -458,6 +458,60 @@ def _download_and_extract_national_data() -> pd.Series:
     return master_series
 
 
+@functools.lru_cache(maxsize=None)
+def get_annual_energy_shares(year: int) -> pd.Series:
+    """
+    Get the share of each subdivision in the annual demand of a year.
+
+    The hourly national demand of EGAT in the year (from the downloaded
+    data, without new downloads) is split into the subdivisions with
+    the hourly shares of get_regional_shares, as in
+    download_and_extract_data, and summed over the year.
+
+    Parameters
+    ----------
+    year : int
+        The local year of interest. All its hours must be downloaded.
+
+    Returns
+    -------
+    pd.Series
+        The share of each subdivision in the annual demand, with the
+        codes of CODES_OF_REGIONS as index. The shares add up to 1.
+
+    Raises
+    ------
+    ValueError
+        If the national demand of the year is not complete.
+    """
+    national_demand = (
+        _read_cached_data()
+        .dropna(subset=["Load (MW)"])
+        .drop_duplicates("Time (LOCAL)", keep="last")
+        .set_index("Time (LOCAL)")["Load (MW)"]
+    )
+    national_demand = national_demand[national_demand.index.year == year]
+
+    hours_in_year = 8784 if pd.Timestamp(year=year, month=1, day=1).is_leap_year else 8760
+    if len(national_demand) != hours_in_year:
+        raise ValueError(
+            f"The EGAT demand of {year} has {len(national_demand)} of "
+            f"{hours_in_year} hours in {_get_cache_file_path()}. Retrieve "
+            "the EGAT data of the whole year first."
+        )
+
+    shares = get_regional_shares()
+    local_time = national_demand.index
+    hourly_shares = shares.reindex(
+        pd.MultiIndex.from_arrays(
+            [local_time.month, local_time.day, local_time.hour],
+            names=["month", "day", "hour"],
+        )
+    )
+    regional_demand = hourly_shares.mul(national_demand.to_numpy(), axis=0).sum()
+    return regional_demand / regional_demand.sum()
+
+
 def download_and_extract_data(code: str = "THA") -> pd.Series:
     """
     Download and extract the electricity demand data of a code.

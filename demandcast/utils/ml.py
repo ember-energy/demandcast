@@ -42,7 +42,7 @@ def read_and_check_ml_configuration() -> BaseModel:
         splitter: str
         time: str
         categorical_features: Optional[list[str]] = None
-        categorical_values: Optional[dict[str, list[str]]] = None
+        categorical_values: Optional[dict[str, list[int | str]]] = None
         scaling_variables: Optional[list[str]] = None
 
     # Define the path to the features and target configuration file.
@@ -258,6 +258,32 @@ def _split_temporally(
     for key in split_dataset.keys():
         split_dataset[key] = split_dataset[key].reset_index(drop=True)
 
+    # Check that the requested testing and validation sets are not
+    # empty. An empty validation set gives a score of 0 at every
+    # iteration, so early stopping keeps only the first tree.
+    for split_name in ("testing", "validation"):
+        if split_name in split_dataset and split_dataset[split_name].empty:
+            raise ValueError(
+                f"The {split_name} set is empty: no entity has data in "
+                f"the {'last year' if split_name == 'testing' else 'year before the last year'} "
+                f"(years in the data: "
+                f"{sorted(dataset[splitter_column].unique().tolist())}). "
+                "Assemble more years, or set "
+                f"{'reserve_testing_set' if split_name == 'testing' else 'use_validation_set'} "
+                "to false in train_config.yaml."
+            )
+
+    # Check that some data is left for training.
+    if split_dataset["training"].empty:
+        raise ValueError(
+            "No data is left for training after reserving the last year "
+            "of each entity for testing and/or the year before for "
+            f"validation (years in the data: "
+            f"{sorted(dataset[splitter_column].unique().tolist())}). "
+            "Assemble more years, or set reserve_testing_set and/or "
+            "use_validation_set to false in train_config.yaml."
+        )
+
     logging.info("Dataset split complete:")
     for key in split_dataset.keys():
         logging.info(
@@ -347,17 +373,33 @@ def _split_in_groups(
     features = dataset[feature_columns].copy()
 
     if categorical_feature_columns:
-        # Convert numeric categorical features to integer type and then
-        # to category dtype. Text categorical features (e.g., the entity
-        # code) use the fixed categories of categorical_values, so that
-        # the codes are the same in training and forecasting.
+        # Convert the categorical features to category dtype. Features
+        # listed in categorical_values use those fixed categories, so
+        # that the categories are the same in the training, validation,
+        # testing and forecasting sets, even if a set does not contain
+        # all values (e.g., only some months). Other numeric features
+        # take the categories of their values. Text categorical features
+        # (e.g., the entity code) must be listed in categorical_values.
         for feature in categorical_feature_columns:
             column = features[feature]
+            categories = (categorical_values or {}).get(feature)
             if pandas.api.types.is_numeric_dtype(column):
-                features[feature] = column.astype(int).astype("category")
+                column = column.astype(int)
+                if categories is None:
+                    features[feature] = column.astype("category")
+                    continue
+                categories = [int(category) for category in categories]
+                unknown = set(column.unique()) - set(categories)
+                if unknown:
+                    raise ValueError(
+                        f"'{feature}' has values not in categorical_values: "
+                        f"{sorted(unknown)}."
+                    )
+                features[feature] = pandas.Categorical(
+                    column, categories=categories
+                )
                 continue
 
-            categories = (categorical_values or {}).get(feature)
             if categories is None:
                 raise ValueError(
                     f"The text feature '{feature}' needs its categories in "

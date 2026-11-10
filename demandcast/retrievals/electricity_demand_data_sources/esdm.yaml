@@ -1,0 +1,61 @@
+entities:
+  - country_name: Indonesia
+    country_code: IDN
+    start_date: 2016-09-01
+    end_date: today
+  - subdivision_name: Indonesia Batam-Riau Islands
+    subdivision_code: BTM
+    country_name: Indonesia
+    country_code: IDN
+    start_date: 2016-09-01
+    end_date: today
+    time_zone: Asia/Jakarta
+  - subdivision_name: Indonesia Jawa
+    subdivision_code: JAW
+    country_name: Indonesia
+    country_code: IDN
+    start_date: 2016-09-01
+    end_date: today
+    time_zone: Asia/Jakarta
+  - subdivision_name: Indonesia Kalimantan
+    subdivision_code: KAL
+    country_name: Indonesia
+    country_code: IDN
+    start_date: 2016-09-01
+    end_date: today
+    time_zone: Asia/Jakarta
+  - subdivision_name: Indonesia Sumatera
+    subdivision_code: SUM
+    country_name: Indonesia
+    country_code: IDN
+    start_date: 2016-09-01
+    end_date: today
+    time_zone: Asia/Jakarta
+  - subdivision_name: Indonesia Sulawesi
+    subdivision_code: SUL
+    country_name: Indonesia
+    country_code: IDN
+    start_date: 2016-09-01
+    end_date: today
+    time_zone: Asia/Jakarta
+  - subdivision_name: Indonesia Maluku
+    subdivision_code: MAL
+    country_name: Indonesia
+    country_code: IDN
+    start_date: 2016-09-01
+    end_date: today
+    time_zone: Asia/Jakarta
+  - subdivision_name: Indonesia Nusa Tenggara
+    subdivision_code: NUS
+    country_name: Indonesia
+    country_code: IDN
+    start_date: 2016-09-01
+    end_date: today
+    time_zone: Asia/Jakarta
+  - subdivision_name: Indonesia Papua
+    subdivision_code: PAP
+    country_name: Indonesia
+    country_code: IDN
+    start_date: 2016-09-01
+    end_date: today
+    time_zone: Asia/Jakarta
