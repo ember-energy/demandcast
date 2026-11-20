@@ -764,6 +764,16 @@ MAJOR_HOLIDAYS = {
         "names": [],
         "periods": [((12, 29), (12, 31)), ((1, 1), (1, 3)), ((4, 12), (4, 17))],
     },
+    "IDN":{
+        # Lebaran (Idul Fitri, both days), with the collective leave and
+        # "mudik" days before and after it.
+        "names":['Hari Raya Idul Fitri'],
+        # Christmas (24 - 26 Dec) and New Year (1 - 2 Jan), the days
+        # that the synthetic ESDM profile moves with these holidays.
+        "periods":[((12, 24), (12, 26)), ((1, 1), (1, 2))],
+        "days_before":6,
+        "days_after":2,
+    },
 }
 
 
@@ -1087,6 +1097,11 @@ def run_data_assemply(
             (merged_dataset["Local year"] >= start_year)
             & (merged_dataset["Local year"] <= end_year)
         ]
+
+    # Sort the rows by entity and time, so that the saved files are in
+    # a fixed, readable order (the merge does not keep any order), and
+    # the row subsampling of the model is reproducible.
+    merged_dataset = merged_dataset.sort_values(["Entity code", "Time (UTC)"])
 
     # Get the assembled data folder path.
     assembled_data_folder = utils.config.read_folders_structure()[

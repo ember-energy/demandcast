@@ -11,23 +11,22 @@
 
 # - gdp_ppp_per_capita,
 # - temperature.
-variable: electricity_demand
+variable: annual_electricity_demand_per_capita
 
 
 # OPTIONAL - REQUIRED for electricity_demand variable.
 # The acronym of the data source as defined in the retrieval
 # modules (example: "entsoe").
-electricity_data_source: "gso"
-
+electricity_data_source: 
 # OPTIONAL.
 # The ISO Alpha-3 code (example: "FRA") or a combination of ISO
 # Alpha-3 code and subdivision code (example: "USA_CAL").
-code: "MYS_PEN"
+code: 
 
 # OPTIONAL.
 # The path to the yaml file containing the list of codes of the
 # countries and subdivisions of interest."
-file: 
+file: D:/Modelling/demandcast/demandcast/config/target_subnationals_config.yaml
 #"D:/Modelling/demandcast/demandcast/config/target_subnationals_config.yaml"
 #"D:/Modelling/demandcast/demandcast/config/target_countries_config.yaml"
 # OPTIONAL."
@@ -36,17 +35,17 @@ year:
 
 # OPTIONAL.
 # Start year for a range of years of data to be retrieved.
-start_year: 
+start_year: 2020
 
 # OPTIONAL.
 # End year for a range of years of data to be retrieved.
-end_year: 
+end_year: 2030
 
 # OPTIONAL.
 # Scenario of the data to be retrieved.
 # Specify for future years, or else it will download all the available scenarios
 # it is painful to run everything
-scenario: #PEP-REF-PSA1
+scenario: SSP2-BASELINE
 #Philippines (PHL and its grids): population scenarios PSA1, PSA2, PSA3 (PSA projections); annual_electricity_demand_per_capita scenarios PEP-REF-PSA1..3 and PEP-CES-PSA1..3 (PEP sales x grid-load factor / PSA population).
 #Scenario SPP1-2.6 is the sustainability pathway, but less aggressive than SSP1-1.9. Setting this as default scenario
 #Scenario SSP1-26 for annual_electricity_demand_per_capita
@@ -58,7 +57,6 @@ scenario: #PEP-REF-PSA1
 # Variable of the weather data to be retrieved (only "temperature" is
 # currently supported).
 weather_variable: #temperature
-
 # OPTIONAL.
 # The climate model for the weather data to be retrieved.
 # For temperature, it is recommended to specify the climate model, or else the processing time is painful

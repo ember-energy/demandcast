@@ -45,6 +45,27 @@ Description:
     up in 2026. Set USE_NSO_NATIONAL_TOTAL to False to keep the World
     Bank national population in 2012-2025 and use the NSO only to split
     it into regions (with the NSO share of each year).
+
+    3. Indonesia
+
+    The national population of Indonesia (IDN) uses the default data
+    (World Bank for historical years, IIASA SSP for future years), so
+    that it is consistent with the electricity demand per capita of
+    Ember (divided by the World Bank population).
+
+    For its eight grid nodes (IDN_SUM, IDN_BTM, IDN_JAW, IDN_KAL,
+    IDN_SUL, IDN_NUS, IDN_MAL, and IDN_PAP), the national population is
+    multiplied by the share of the node in the population of
+    BPS-Statistics Indonesia, aggregated from the provinces (see
+    bps_indonesia), instead of the gridded population:
+
+    - before 2015: World Bank x BPS share of 2015;
+    - 2015-2050: World Bank (historical years) or IIASA (future years) x
+      BPS share of the same year (BPS Web API for 2015-2019, BPS
+      projection 2020-2050 for 2020-2050);
+    - after 2050: IIASA x BPS share of 2050.
+
+    The nodes therefore add up to the national population in all years.
 """
 
 import logging
@@ -59,6 +80,7 @@ import utils.scenarios
 import utils.time_series
 from tqdm import tqdm
 
+import retrievals.socio_economic_data_sources.bps_indonesia as bps_indonesia
 import retrievals.socio_economic_data_sources.iiasa as iiasa
 import retrievals.socio_economic_data_sources.nso_thailand as nso_thailand
 import retrievals.socio_economic_data_sources.psa_philippines as psa_philippines
@@ -319,13 +341,114 @@ def _get_historical_population_of_thailand(
     return population
 
 
+def uses_bps_shares(code: str) -> bool:
+    """
+    Check if the population of a code is split from the national
+    population with the shares of BPS-Statistics Indonesia.
+
+    Parameters
+    ----------
+    code : str
+        The code of the country or subdivision of interest.
+
+    Returns
+    -------
+    bool
+        True for the grid nodes of Indonesia.
+    """
+    return code in bps_indonesia.get_codes()
+
+
+def _split_with_bps_shares(
+    code: str, national_population: pandas.Series
+) -> pandas.Series:
+    """
+    Split the national population of Indonesia into one of its grid
+    nodes with the BPS share of the node in each year.
+
+    Parameters
+    ----------
+    code : str
+        The code of the grid node.
+    national_population : pandas.Series
+        The national population of Indonesia, with the years as index.
+
+    Returns
+    -------
+    pandas.Series
+        The population of the node, with the years as index.
+    """
+    years = national_population.index.tolist()
+    shares = bps_indonesia.get_node_shares(years).loc[code]
+    logging.info(
+        f"Scaling the national population of {bps_indonesia.CODE} to {code} "
+        "using the BPS shares."
+    )
+    return national_population * shares
+
+
 def _extract_historical_population(
     code: str,
     global_historical_population: pandas.DataFrame,
     requested_historical_years: list[int],
     used_historical_years: list[int],
     available_historical_years_of_gridded_data: list[int],
-):
+) -> pandas.Series:
+    """
+    Extract the historical population of a country or subdivision.
+
+    The population comes from the default data sources (see
+    _extract_default_historical_population), except for the grid nodes
+    of Indonesia, where the World Bank population of Indonesia is split
+    with the BPS shares of the nodes.
+
+    Parameters
+    ----------
+    code : str
+        The code of the country or subdivision of interest.
+    global_historical_population : pandas.DataFrame
+        The global historical population data from the World Bank.
+    requested_historical_years : list[int]
+        The requested historical years.
+    used_historical_years : list[int]
+        The historical years used for each requested year.
+    available_historical_years_of_gridded_data : list[int]
+        The available historical years for gridded data.
+
+    Returns
+    -------
+    pandas.Series
+        The historical population, with the requested years as index.
+    """
+    if uses_bps_shares(code):
+        # Get the World Bank population of Indonesia, holding the last
+        # available value for later years.
+        national_population = global_historical_population.loc[
+            bps_indonesia.CODE
+        ].dropna()
+        national_population = national_population.reindex(
+            sorted(set(national_population.index) | set(requested_historical_years))
+        ).ffill()
+        return _split_with_bps_shares(
+            code, national_population.reindex(requested_historical_years)
+        )
+
+    return _extract_default_historical_population(
+        code,
+        global_historical_population,
+        requested_historical_years,
+        used_historical_years,
+        available_historical_years_of_gridded_data,
+    )
+
+
+def _extract_default_historical_population(
+    code: str,
+    global_historical_population: pandas.DataFrame,
+    requested_historical_years: list[int],
+    used_historical_years: list[int],
+    available_historical_years_of_gridded_data: list[int],
+) -> pandas.Series:
     country_code = code.split("_")[0]
 
     # For Thailand and its regions, use the NSO and the World Bank.
@@ -494,6 +617,59 @@ def _extract_future_population(
 ) -> pandas.Series:
     """
     Extract the future population for the country or subdivision.
+
+    The population comes from the default data sources (see
+    _extract_default_future_population), except for the grid nodes of
+    Indonesia, where the IIASA population of Indonesia is split with the
+    BPS shares of the nodes (the shares of 2050 after 2050).
+
+    Parameters
+    ----------
+    code : str
+        The code of the country or subdivision of interest.
+    global_future_population : pandas.DataFrame
+        The global future population data.
+    future_years : list[int]
+        The future years of interest.
+    available_future_years_of_gridded_data : list[int]
+        The available future years for gridded data.
+    available_historical_years_of_gridded_data : list[int]
+        The available historical years for gridded data.
+    scenario : str
+        The scenario of the future population data.
+
+    Returns
+    -------
+    pandas.Series
+        The future population for the country or subdivision.
+    """
+    if uses_bps_shares(code):
+        national_population = iiasa.extract_and_interpolate(
+            global_future_population, bps_indonesia.CODE, scenario
+        )
+        return _split_with_bps_shares(code, national_population)
+
+    return _extract_default_future_population(
+        code,
+        global_future_population,
+        future_years,
+        available_future_years_of_gridded_data,
+        available_historical_years_of_gridded_data,
+        scenario,
+    )
+
+
+def _extract_default_future_population(
+    code: str,
+    global_future_population: pandas.DataFrame,
+    future_years: list[int],
+    available_future_years_of_gridded_data: list[int],
+    available_historical_years_of_gridded_data: list[int],
+    scenario: str,
+) -> pandas.Series:
+    """
+    Extract the future population for the country or subdivision from
+    the default data sources.
 
     Parameters
     ----------

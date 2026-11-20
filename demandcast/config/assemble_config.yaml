@@ -9,18 +9,17 @@ target_use: training
 # The path to the yaml file containing the list of codes of the
 # countries and subdivisions of interest.
 file: "D:/Modelling/demandcast/demandcast/config/target_subnationals_config.yaml"
-
+#"D:/Modelling/demandcast/demandcast/config/target_subnationals_config.yaml"
+#D:/Modelling/demandcast/demandcast/config/target_countries_config.yaml
 # OPTIONAL.
 # Start year for a range of years of data to be assembled.
-start_year: 2030       
-
+start_year: 2030
 # OPTIONAL.
 # End year for a range of years of data to be assembled.
 end_year: 2030
- 
 # OPTIONAL.
 # Selected scenario for annual electricity demand per capita.
-scenario_for_annual_electricity_demand_per_capita: PEP-REF-PSA1
+scenario_for_annual_electricity_demand_per_capita: SSP2-Baseline
 
 # OPTIONAL.
 # Selected scenario for GDP PPP per capita.
@@ -28,7 +27,7 @@ scenario_for_gdp_ppp_per_capita: SSP2
 
 # OPTIONAL.
 # Selected scenario for population.
-scenario_for_population: PSA1
+scenario_for_population: SSP2
 
 # OPTIONAL.
 # Selected scenario for temperature.

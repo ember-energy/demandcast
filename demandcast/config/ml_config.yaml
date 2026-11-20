@@ -51,15 +51,38 @@ categorical_features:
   - "Monthly average temperature rank - Top 1"
 
 # OPTIONAL.
-# The fixed categories of the text categorical features, in the order of
+# The fixed categories of the categorical features, in the order of
 # their codes. Required for every non-numeric categorical feature, so
 # that training and forecasting use the same codes. Entities that are
-# not listed cannot be modelled.
+# not listed cannot be modelled. Numeric categorical features listed
+# here also use fixed categories, so that the training, validation,
+# testing and forecasting sets have the same categories even if a set
+# does not contain all values (e.g., only half a year).
 categorical_values:
   "Entity code":
     - "PHL_LU"
     - "PHL_VI"
     - "PHL_MI"
+    - "SGP"
+    - "THA_CEN"
+    - "THA_NEA"
+    - "THA_NOR"
+    - "THA_SOU"
+    - "THA"
+    - "IDN_JAW"
+    - "IDN_SUM"
+    - "IDN_BTM"
+    - "IDN_KAL"
+    - "IDN_SUL"
+    - "IDN_NUS"
+    - "IDN_MAL"
+    - "IDN_PAP"
+  "Local hour of the day": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+  "Local weekend indicator": [0, 1]
+  "Local major holiday indicator": [0, 1]
+  "Local other holiday indicator": [0, 1]
+  "Local month of the year": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+  "Monthly average temperature rank - Top 1": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
 # OPTIONAL.
 # Variables to scale the predictions.

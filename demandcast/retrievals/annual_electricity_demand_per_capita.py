@@ -37,10 +37,16 @@ Description:
     scenario for the population when assembling the data, so that the
     annual demand is retrieved.
 
+    For Singapore, Malaysia, and Vietnam (EMBER_ONLY_CODES), the
+    historical electricity demand per capita comes only from Ember,
+    instead of the average of Ember and the World Bank. Their
+    subdivisions use the same national data. Indonesia and its grid
+    nodes use PLN data instead (see 2.4).
+
     2.2. Singapore
 
-    Historical data uses the default setting (average of Ember and the
-    World Bank, up to the last historical year).
+    Historical data uses Ember only (see EMBER_ONLY_CODES), up to the
+    last historical year.
 
     For the future, Singapore follows:
     - 2026 - 2034: the projected generation (GWh) of the Energy Market
@@ -91,6 +97,50 @@ Description:
     EPPO-SSP2-45. The SSP of the IAMC scenario is also used for the
     population, so use the same SSP for the population when assembling
     the data (scenario_for_population: SSP2).
+
+    2.4. Indonesia
+
+    The historical data of Indonesia and its grid nodes (IDN_SUM,
+    IDN_BTM, IDN_JAW, IDN_KAL, IDN_SUL, IDN_NUS, IDN_MAL, IDN_PAP) is
+    currently available for 2017 - 2025 only (other years will be added
+    later). The annual energy consumption of each node (GWh) is read from
+    the "Grid_Node_Energy_GWh" tab of
+    Indonesia_PLN_Peak_Energy_LoadFactor_2017-2025.xlsx (Statistik PLN,
+    see electricity_demand_data_sources/esdm.py) and divided by the
+    historical population of the node (retrievals.population: World
+    Bank total x BPS shares). The national demand is the sum of the
+    nodes, divided by the World Bank population, so the demand of the
+    nodes adds up to the national demand.
+
+    For the future (all IAMC scenarios), Indonesia and its nodes follow
+    the RUPTL 2025-2034 of PLN (socio_economic_data_sources/pln_ruptl.py,
+    "Sales (GWh)" table of the sheet "By_grid_node" of
+    RUPTL_2025-2034_Provincial_Demand_1_2.xlsx):
+    - 2026 - 2034: the national demand is the RUPTL sales of Indonesia
+      (sum of the grid nodes), and the demand of a node is the RUPTL
+      sales of the node. The RUPTL sales only cover PLN assets, which is
+      why the historical data uses the PLN energy consumption instead of
+      Ember (529 TWh in 2025): Ember also includes captive and off-grid
+      generation, and would give a large drop between 2025 and 2026.
+    - Note on the step between 2025 and 2026 (kept as is): the RUPTL
+      sales of 2025 (323.0 TWh) are about 3% higher than the PLN energy
+      consumption of 2025 (313.6 TWh). The national demand therefore
+      rises by 8.4% from 2025 (PLN, 313.6 TWh) to 2026 (RUPTL,
+      340.0 TWh), against 5.2% of growth within the RUPTL. The step is
+      larger for some nodes, e.g., IDN_KAL +13%, IDN_BTM +15%, IDN_SUL
+      +22% and IDN_MAL +36%.
+    - Until 2030, the share of IDN_BTM in the national demand is held at
+      its historical PLN share, and the other nodes are rescaled (the
+      national demand is unchanged), as the RUPTL seems to exclude Batam
+      before 2031.
+    - 2035 onwards: the national demand per capita of 2034 is
+      extrapolated with the growth rates of the IAMC scenario (default
+      setting). The demand of a node is the national demand multiplied
+      by the RUPTL share of the node in 2034.
+    The demand is divided by the projected population of
+    retrievals.population (IIASA SSP of the IAMC scenario, split into the
+    nodes with the BPS shares), so use the same SSP for the population
+    when assembling the data.
 """
 
 import functools
@@ -105,16 +155,24 @@ import utils.time_series
 from tqdm import tqdm
 
 import retrievals.population
+from retrievals.electricity_demand_data_sources import esdm
 from retrievals.socio_economic_data_sources import (
     doe_philippines,
     ema_singapore,
     eppo_thailand,
     pep_philippines,
+    pln_ruptl,
     psa_philippines,
 )
 import retrievals.socio_economic_data_sources.ember as ember
 import retrievals.socio_economic_data_sources.iiasa as iiasa
 import retrievals.socio_economic_data_sources.world_bank as world_bank
+
+# Define the countries whose historical electricity demand per capita
+# comes only from Ember, instead of the average of Ember and the World
+# Bank. Their subdivisions use the same national data. Indonesia uses
+# the PLN data instead (see get_historical_data_from_pln).
+EMBER_ONLY_CODES = ["SGP", "MYS", "VNM"]
 
 # Define the first year of the EMA projection used for Singapore.
 FIRST_YEAR_OF_EMA_PROJECTION = 2026
@@ -351,6 +409,115 @@ def _extend_with_iamc_growth_rates(
         )
 
     return pandas.concat(parts).sort_index()
+
+
+def uses_ruptl_projection(code: str) -> bool:
+    """
+    Check if the future demand of a code comes from the RUPTL of PLN.
+
+    Parameters
+    ----------
+    code : str
+        The code of the country or subdivision of interest.
+
+    Returns
+    -------
+    bool
+        True for Indonesia and its grid nodes.
+    """
+    return code == pln_ruptl.CODE or code in pln_ruptl.get_codes()
+
+
+def get_future_data_from_ruptl(
+    code: str,
+    scenario: str,
+    growth_rates: pandas.DataFrame,
+    national_last_historical_value: float,
+    last_historical_year: int,
+) -> pandas.Series:
+    """
+    Get the future electricity demand per capita of Indonesia or one of
+    its grid nodes from the RUPTL.
+
+    The national demand follows:
+    - from the year after the last historical year to
+      pln_ruptl.LAST_YEAR_OF_PROJECTION (2034): the RUPTL sales of
+      Indonesia (sum of the grid nodes, "By_grid_node" sheet);
+    - after: the national demand per capita of 2034 is extrapolated with
+      the growth rates of the IAMC scenario of Indonesia.
+
+    The demand of a grid node is the national demand multiplied by the
+    share of the node in the RUPTL sales of the same year (the share of
+    2034 after 2034, see pln_ruptl.get_node_shares). Until 2034, this is
+    the RUPTL sales of the node, except for the years in which the share
+    of IDN_BTM is held at its historical value
+    (pln_ruptl.HOLD_HISTORICAL_BTM_SHARE_UNTIL). The demand is divided by
+    the projected population of retrievals.population (IIASA SSP, split
+    into the nodes with the BPS shares), so that the demand of the nodes
+    adds up to the national demand.
+
+    Parameters
+    ----------
+    code : str
+        The code of Indonesia or of one of its grid nodes.
+    scenario : str
+        The IAMC scenario, e.g., SSP2-45. Its SSP is used for the
+        population.
+    growth_rates : pandas.DataFrame
+        The IIASA growth rates of electricity demand per capita.
+    national_last_historical_value : float
+        The last historical electricity demand per capita of Indonesia
+        in kWh, used if the last historical year is before the RUPTL
+        projection.
+    last_historical_year : int
+        The last historical year.
+
+    Returns
+    -------
+    pandas.Series
+        The future electricity demand per capita in kWh, with the years
+        from the year after the last historical year to 2100 as index.
+    """
+    population_scenario = scenario.split("-")[0].upper()
+
+    # Get the projected national demand in TWh: the RUPTL sales of
+    # Indonesia (sum of the grid nodes), converting GWh to TWh.
+    national_sales = pln_ruptl.read_national_sales()
+    projection_years = [
+        year
+        for year in national_sales.index
+        if last_historical_year < year <= pln_ruptl.LAST_YEAR_OF_PROJECTION
+    ]
+    national_demand = national_sales.loc[projection_years] / 1000
+
+    # Get the projected national population, and calculate the national
+    # electricity demand per capita, converting TWh to kWh.
+    national_population = retrievals.population._extract_future_population(
+        pln_ruptl.CODE, _read_future_population(), [], [], [], population_scenario
+    )
+    national_demand_per_capita = _extend_with_iamc_growth_rates(
+        national_demand * 1e9 / national_population.reindex(projection_years),
+        pln_ruptl.CODE,
+        scenario,
+        growth_rates,
+        national_last_historical_value,
+        last_historical_year,
+    )
+    if code == pln_ruptl.CODE:
+        return national_demand_per_capita
+
+    # Split the national demand (in kWh) into the node with the RUPTL
+    # shares, and divide it by the population of the node.
+    years = national_demand_per_capita.index.tolist()
+    regional_demand = (
+        national_demand_per_capita
+        * national_population.reindex(years)
+        * pln_ruptl.get_node_shares(years).loc[code]
+    )
+    regional_population = retrievals.population._extract_future_population(
+        code, _read_future_population(), [], [], [], population_scenario
+    )
+    return (regional_demand / regional_population.reindex(years)).dropna()
 
 
 def get_ema_scenarios() -> list[str]:
@@ -598,9 +765,24 @@ def get_historical_data() -> pandas.DataFrame:
 
     # Where the combined DataFrame is NaN because one of the datasets is
     # missing, use the other dataset.
-    return electricity_demand_per_capita.fillna(
+    electricity_demand_per_capita = electricity_demand_per_capita.fillna(
         world_bank_electricity_demand_per_capita
     ).fillna(ember_electricity_demand_per_capita)
+
+    # For the countries in EMBER_ONLY_CODES, use only the Ember data.
+    ember_only_codes = [
+        code
+        for code in EMBER_ONLY_CODES
+        if code in ember_electricity_demand_per_capita.index
+    ]
+    electricity_demand_per_capita.loc[ember_only_codes] = (
+        ember_electricity_demand_per_capita.reindex(
+            index=ember_only_codes,
+            columns=electricity_demand_per_capita.columns,
+        )
+    )
+
+    return electricity_demand_per_capita
 
 
 def get_regional_codes() -> list[str]:
@@ -706,6 +888,84 @@ def get_regional_historical_data_from_eppo(
     return (regional_demand * 1e9 / population).dropna()
 
 
+def uses_pln_historical_data(code: str) -> bool:
+    """
+    Check if the historical demand of a code comes from the PLN energy
+    consumption of the grid nodes of Indonesia.
+
+    Parameters
+    ----------
+    code : str
+        The code of the country or subdivision of interest.
+
+    Returns
+    -------
+    bool
+        True for Indonesia and its grid nodes.
+    """
+    return code == pln_ruptl.CODE or code in esdm.CODES_OF_NODES.values()
+
+
+def get_pln_national_demand() -> pandas.Series:
+    """
+    Get the historical national electricity demand of Indonesia from PLN.
+
+    The national demand is the sum of the annual energy consumption of
+    the grid nodes ("Grid_Node_Energy_GWh" tab of esdm.ENERGY_FILE_PATH),
+    currently available for 2017 - 2025.
+
+    Returns
+    -------
+    pandas.Series
+        The national electricity demand in TWh, with the years as index.
+    """
+    return esdm.read_annual_energy().sum(axis=1, min_count=1).dropna() / 1000
+
+
+def get_historical_data_from_pln(
+    code: str,
+    global_historical_population: pandas.DataFrame | None = None,
+) -> pandas.Series:
+    """
+    Get the historical electricity demand per capita of Indonesia or one
+    of its grid nodes from PLN.
+
+    The annual energy consumption of the grid node ("Grid_Node_Energy_GWh"
+    tab of esdm.ENERGY_FILE_PATH, Statistik PLN), or of Indonesia (sum of
+    the nodes), is divided by the historical population of the node
+    (World Bank population of Indonesia x BPS share of the node, see
+    retrievals.population) or of Indonesia (World Bank). The data is
+    currently available for 2017 - 2025 only.
+
+    Parameters
+    ----------
+    code : str
+        The code of Indonesia or of one of its grid nodes.
+    global_historical_population : pandas.DataFrame | None, optional
+        The global historical population data from the World Bank.
+
+    Returns
+    -------
+    pandas.Series
+        The historical electricity demand per capita in kWh.
+    """
+    # Get the demand of Indonesia or of the node in TWh.
+    if code == pln_ruptl.CODE:
+        demand = get_pln_national_demand()
+    else:
+        demand = esdm.read_annual_energy()[code].dropna() / 1000
+    years = demand.index.tolist()
+
+    # Get the population for the same years.
+    population = retrievals.population.get_historical_population(
+        code, years, global_historical_population
+    )
+
+    # Calculate the electricity demand per capita, converting TWh to
+    # kWh.
+    return (demand * 1e9 / population).dropna()
+
+
 def run_data_retrieval(
     code: str | None,
     file: str | None,
@@ -778,6 +1038,14 @@ def run_data_retrieval(
         national_electricity_demand = ember.download_electricity_demand()
         global_historical_population = world_bank.download("population")
 
+    # If Indonesia or any of its grid nodes is of interest, get the
+    # national PLN demand per capita and the population data.
+    if any(uses_pln_historical_data(code) for code in codes):
+        global_historical_population = world_bank.download("population")
+        pln_national_demand_per_capita = get_historical_data_from_pln(
+            pln_ruptl.CODE, global_historical_population
+        )
+
     # Loop over the countries and subdivisions.
     for code in tqdm(codes, desc="Countries and subdivisions"):
         # Get the ISO Alpha-3 code of the country itself or the country
@@ -845,6 +1113,18 @@ def run_data_retrieval(
                     code,
                     national_electricity_demand,
                     global_historical_population,
+                )
+            )
+        elif uses_pln_historical_data(code):
+            # Use the PLN energy consumption of Indonesia or the grid
+            # node (currently 2017 - 2025 only).
+            logging.info(
+                f"Using the PLN energy consumption (Grid_Node_Energy_GWh) "
+                f"for {code}."
+            )
+            historical_electricity_demand_per_capita = (
+                get_historical_data_from_pln(
+                    code, global_historical_population
                 )
             )
 
@@ -1036,6 +1316,23 @@ def run_data_retrieval(
                                 future_scenario,
                                 global_future_electricity_demand_per_capita_growth_rates,
                                 historical_electricity_demand_per_capita.loc[
+                                    last_historical_year
+                                ],
+                                last_historical_year,
+                            )
+                        )
+                    elif uses_ruptl_projection(code):
+                        # Calculate the future electricity demand per
+                        # capita from the growth of the RUPTL sales and
+                        # the RUPTL shares of the nodes, extended with
+                        # the growth rates of the IAMC scenario.
+                        last_historical_year = max(available_historical_years)
+                        future_electricity_demand_per_capita = (
+                            get_future_data_from_ruptl(
+                                code,
+                                future_scenario,
+                                global_future_electricity_demand_per_capita_growth_rates,
+                                pln_national_demand_per_capita.loc[
                                     last_historical_year
                                 ],
                                 last_historical_year,
