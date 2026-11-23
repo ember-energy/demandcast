@@ -97,7 +97,7 @@ the shape of the profile from it.
 | `MYS`, `MYS_PEN` | Grid System Operator (GSO) | [`gso.py`](../retrievals/electricity_demand_data_sources/gso.py) | Sep 2016 – today, 10-minute | Measured demand of **Peninsular Malaysia only**. |
 | `MYS_SAB`, `MYS_SAR` | DOSM eStatistik + GSO (synthetic) | [`estatistik.py`](../retrievals/electricity_demand_data_sources/estatistik.py) | Monthly totals | Peninsular shape × monthly consumption (see below). |
 | `VNM`, `VNM_NOR`, `VNM_CEN`, `VNM_SOU` | National Power System and Market Operator (NSMO) | [`nsmo.py`](../retrievals/electricity_demand_data_sources/nsmo.py) | Sep 2022 – Dec 2025, half-hourly | Measured demand of each region, from monthly files downloaded manually. |
-| `IDN` and 8 grid nodes | 2017 Indonesian load shapes + PLN/HEESI statistics (synthetic) | [`esdm.py`](../retrievals/electricity_demand_data_sources/esdm.py) | 2017 – 2025, hourly | 2017 node shapes fitted to the national peak load and on-grid generation of each year, split into nodes by energy share (see below). |
+| `IDN` and 8 grid nodes | 2017 Indonesian load shapes + PLN/HEESI statistics, and RUPTL for 2025 (synthetic) | [`esdm.py`](../retrievals/electricity_demand_data_sources/esdm.py) | 2017 – 2025, hourly | 2017–2024: 2017 node shapes fitted to the national peak load and on-grid generation, split into nodes by energy share. 2025: each node fitted to its own RUPTL production and peak load, from the power balance (default) or the provincial data (see below). |
 
 #### Thailand regions (EGAT)
 
@@ -175,8 +175,11 @@ statistics of each year, 2017–2025. The inputs are in
 |---|---|---|
 | Hourly load shape by node, 2017 | `Indonesia_Load_Shapes_Peaks_GridNodes.xlsx`, tab `Load_Shape_pu` (from the RUPTL-based *Indonesia Load Profile-AEO* workbook) | Shape of the curves |
 | Energy consumption by node | `Indonesia_PLN_Peak_Energy_LoadFactor_2017-2025.xlsx`, tab `Grid_Node_Energy_GWh` (Statistik PLN, Table 2) | Split of the energy between nodes |
-| National on-grid generation | ESDM Handbook of Energy & Economic Statistics of Indonesia 2025 (HEESI 2025), sections 6.4.2A–B | Annual energy of `IDN` |
-| National peak load | HEESI 2025, section 6.4.8 (Statistik PLN, Table 1, for 2018, 2020, 2022) | Annual peak of `IDN` |
+| National on-grid generation | ESDM Handbook of Energy & Economic Statistics of Indonesia 2025 (HEESI 2025), section 6.4.2A | Annual energy of `IDN`, 2017–2024 |
+| National peak load | HEESI 2025, section 6.4.8 (Statistik PLN, Table 1, for 2018, 2020, 2022) | Annual peak of `IDN`, 2017–2024 |
+| Production, load factor and average peak load by node (option "Using power balance", default) | `RUPTL_2025-2034_Grid_System_Power_Balance_nodes.xlsx`, tab `By_grid_node` (RUPTL 2025–2034 power balance of the main grid systems, Chapter V.5.7, scenario RE Base; read by [`pln_ruptl.py`](../retrievals/socio_economic_data_sources/pln_ruptl.py)) | Annual energy and peak of each node but `IDN_BTM`, 2025 |
+| Production, load factor and average peak load by node (option "Using provincial data") | `RUPTL_2025-2034_Provincial_Demand_1_2.xlsx`, tab `By_grid_node` (RUPTL 2025–2034 provincial tables) | Annual energy and peak of each node, 2025; Kepulauan Riau in `IDN_BTM` for both options |
+| PT PLN Batam energy consumption and peak load | `Indonesia_PLN_Peak_Energy_LoadFactor_2017-2025_1.xlsx`, tabs `Grid_Node_Energy_GWh` and `Grid_Node_Peak_MW` (Statistik PLN 2025) | Batam in `IDN_BTM`, 2025, power-balance option |
 
 The method, for each year:
 
@@ -204,8 +207,8 @@ The method, for each year:
 3. **Base profiles.** Scale the shape of each node to its annual energy
    consumption: `base_node(h) = E_node × shape(h) / Σ shape`. The base
    profile of `IDN` is the sum of the nodes (load factor ≈ 78%).
-4. **National target.** The peak load `P` and on-grid generation `E`
-   set the target load factor `LF = E / (P × hours)`. The base `IDN`
+4. **National target (2017–2024).** The peak load `P` and on-grid
+   generation `E` set the target load factor `LF = E / (P × hours)`. The base `IDN`
    profile is divided by its peak and raised to a power `k`:
 
    ```
@@ -220,18 +223,101 @@ The method, for each year:
    The order of the hours, and so the timing of the daily and weekly
    patterns, is kept.
 
-   | Year | 2017 | 2018 | 2019 | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 |
-   |---|---|---|---|---|---|---|---|---|---|
-   | Peak load (MW) | 38,797 | 38,770 | 41,671 | 40,060 | 42,785 | 41,801 | 58,282 | 61,288 | 65,134 |
-   | On-grid generation (GWh) | 254,660 | 267,085 | 278,942 | 274,851 | 289,471 | 308,095 | 323,321 | 343,892 | 349,883 |
-   | Load factor (8,760 h) | 74.9% | 78.6% | 76.4% | 78.3% | 77.2% | 84.1% | 63.3% | 64.1% | 61.3% |
-   | `k` | 1.19 | 0.99 | 1.11 | 1.01 | 1.06 | 0.70 | 1.90 | 1.87 | 2.05 |
+   | Year | 2017 | 2018 | 2019 | 2020 | 2021 | 2022 | 2023 | 2024 |
+   |---|---|---|---|---|---|---|---|---|
+   | Peak load (MW) | 38,797 | 38,770 | 41,671 | 40,060 | 42,785 | 41,801 | 58,282 | 61,288 |
+   | On-grid generation (GWh) | 254,660 | 267,085 | 278,942 | 274,851 | 289,471 | 308,095 | 323,321 | 343,892 |
+   | Load factor (8,760 h) | 74.9% | 78.6% | 76.4% | 78.3% | 77.2% | 84.1% | 63.3% | 64.1% |
+   | `k` | 1.19 | 0.99 | 1.11 | 1.01 | 1.06 | 0.70 | 1.90 | 1.87 |
 
-5. **Breakdown into nodes.** Split the national target into the nodes
-   by iterative proportional fitting of the base node profiles, so
-   that the nodes add up to `IDN` in every hour, and each node's annual
-   energy is its share of the node energy consumption × `E`. Node
-   peaks are not targeted; they result from the fitting.
+5. **Breakdown into nodes (2017–2024).** Split the national target
+   into the nodes by iterative proportional fitting of the base node
+   profiles, so that the nodes add up to `IDN` in every hour, and each
+   node's annual energy is its share of the node energy consumption ×
+   `E`. Node peaks are not targeted; they result from the fitting.
+
+**2025: node targets from the RUPTL.** For 2025 (`RUPTL_TARGET_YEARS`
+in `esdm.py`), steps 4 and 5 are replaced by a fit of each node to its
+own targets: the production `E_node`, the load factor
+(production-weighted), and the average peak load
+`P_node = E_node × 1000 / (load factor × 8,760)`. The base profile of
+each node is reshaped as in step 4, with its own exponent:
+
+```
+node(h) = P_node × (base_node(h) / max base_node) ^ k_node
+```
+
+so that the node's peak is exactly `P_node` and its energy `E_node`.
+There is no national target and no breakdown into nodes: `IDN` is the
+sum of the nodes.
+
+The targets come from one of two options (`RUPTL_TARGET_OPTION` in
+`esdm.py`, `get_ruptl_node_targets`). Both are kept in
+`data/electricity_demand`: `2026-11-20` (power balance),
+`2026-11-20_provincial_data_batam` and
+`2026-11-20_provincial_data_wo_batam` (provincial data, with and
+without Batam), each with a summary `IDN_esdm_2025_node_summary.xlsx`.
+
+*Option "Using power balance"* (`"power_balance"`, default). The
+targets are the RUPTL power-balance demand of the **main grid systems**
+(Chapter V.5.7), summed by node in the `By_grid_node` tab of
+`RUPTL_2025-2034_Grid_System_Power_Balance_nodes.xlsx` (scenario RE
+Base; ARED is the same in 2025). The node load factor is the
+production-weighted average of the published system load factors.
+`IDN_BTM` has no power-balance table (the Batam / Riau Islands system
+is not covered), so it is built from two parts, whose productions and
+peaks are added:
+
+- **Kepulauan Riau without Batam island**: production and average peak
+  load of the RUPTL provincial file (1,171 GWh, 189 MW);
+- **PT PLN Batam**: energy consumption and peak load of Statistik PLN
+  2025 (`Indonesia_PLN_Peak_Energy_LoadFactor_2017-2025_1.xlsx`,
+  4,201 GWh, 858 MW).
+
+| Node | Production (GWh) | Load factor | Peak (MW) | `k_node` | Systems |
+|---|---|---|---|---|---|
+| `IDN_JAW` | 251,145 | 81.8% | 35,048 | 0.86 | 1 |
+| `IDN_SUM` | 53,083 | 73.9% | 8,200 | 1.17 | 1 |
+| `IDN_KAL` | 17,965 | 73.9% | 2,773 | 0.88 | 2 |
+| `IDN_SUL` | 19,839 | 71.8% | 3,156 | 1.21 | 2 |
+| `IDN_BTM` (Kepulauan Riau + PT PLN Batam) | 5,372 | 58.6% | 1,047 | 1.37 | – |
+| `IDN_NUS` | 3,119 | 72.0% | 494 | 0.83 | 2 |
+| `IDN_MAL` | 659 | 73.1% | 103 | 0.79 | 2 |
+| `IDN_PAP` | 1,872 | 72.4% | 295 | 0.82 | 6 |
+| **`IDN`** (sum) | **353,054** | **79.3%** | **50,809** (sum of node peaks 51,118) | – | |
+
+*Option "Using provincial data"* (`"provincial"`). The targets are the
+RUPTL provincial demand tables, summed by node in the `By_grid_node`
+tab of `RUPTL_2025-2034_Provincial_Demand_1_2.xlsx`. The node load
+factor is the production-weighted average of the provincial load
+factors implied by the RUPTL production and peaks. The RUPTL row of
+`IDN_BTM` is **PLN Kepulauan Riau without Batam island**: Batam is
+supplied by PT PLN Batam, which is not in the RUPTL. With
+`ADD_BATAM_TO_BTM = True`, PT PLN Batam is added to `IDN_BTM`, so that
+it covers the whole of Kepulauan Riau in 2025:
+
+- **Production**: RUPTL Kepulauan Riau (1,171 GWh) + PT PLN Batam, whose
+  production is its PLN energy consumption in 2025 (4,201 GWh) × the
+  RUPTL production / sales ratio of Indonesia (1.079) = 4,533 GWh.
+- **Load factor**: that of Kepulauan Riau in the RUPTL (70.7%), for both
+  parts.
+- **Peak**: production × 1000 / (load factor × 8,760), as in the sheet.
+
+All the other nodes, including `IDN_SUM`, are the RUPTL rows as they
+are. With `ADD_BATAM_TO_BTM = False`, `IDN_BTM` is the RUPTL row only
+(1,171 GWh, 189 MW, without Batam island).
+
+| Node | Production (GWh) | Load factor | Peak (MW) | `k_node` |
+|---|---|---|---|---|
+| `IDN_JAW` | 241,435 | 81.7% | 33,733 | 0.87 |
+| `IDN_SUM` | 56,212 | 71.3% | 8,997 | 1.31 |
+| `IDN_KAL` | 18,899 | 72.4% | 2,979 | 0.94 |
+| `IDN_SUL` | 20,542 | 71.7% | 3,269 | 1.21 |
+| `IDN_BTM` (Kepulauan Riau incl. PT PLN Batam) | 5,704 | 70.7% | 921 | 0.88 |
+| `IDN_NUS` | 5,264 | 73.3% | 819 | 0.78 |
+| `IDN_MAL` | 2,379 | 72.9% | 373 | 0.80 |
+| `IDN_PAP` | 2,669 | 68.7% | 444 | 0.95 |
+| **`IDN`** (sum) | **353,104** | **78.7%** | **51,207** (sum of node peaks 51,535) | – |
 
 Choice of targets:
 
@@ -247,20 +333,84 @@ Choice of targets:
   they reproduce the on-grid generation.
 - With these targets, the load factors equal the published values over
   8,760 hours in 2017–2024 (about 0.2 points lower over the actual
-  hours of the leap years 2020 and 2024). In 2025 the load factor is
-  61.3%, against 62.2% published.
+  hours of the leap years 2020 and 2024). The HEESI values of 2025
+  (349,883 GWh, 65,134 MW) are kept in `NATIONAL_TARGETS` but not used.
 
 Data caveats:
 
-- **Generation level, not consumption.** The profiles include losses
-  and own use: their energy is about 12–15% above the PLN energy
-  consumption of the nodes, in every year.
+- **Generation level, not consumption (2017–2024).** The profiles
+  include losses and own use: their energy is about 12–15% above the
+  PLN energy consumption of the nodes.
 - **2023 break.** From 2023 the published peak includes the generation
   subsidiaries: the peak rises by about 40% between 2022 and 2023 and
-  the 2023–2025 curves are much peakier (`k` ≈ 2, with night-time load
+  the 2023–2024 curves are much peakier (`k` ≈ 2, with night-time load
   falling from about 52% to about 27% of the peak).
+- **2024 → 2025 break.** 2025 uses a different source and basis from
+  2017–2024:
+  - **Energy basis.** The RUPTL provincial production is mainly sales
+    plus distribution losses, about 4% below the RUPTL system
+    production in Jawa-Bali (closer to generation). The power-balance
+    production is the system production (closer to generation) but
+    covers the main grid systems only. `IDN` is 353.1 TWh in 2025 in
+    both options (with Batam), against 343.9 TWh (HEESI on-grid
+    generation) in 2024.
+  - **Peak and shape.** The 2025 national peak (50.8 GW with the power
+    balance, 51.2 GW with the provincial data) is much lower than the
+    2023–2024 HEESI peaks (58.3 and 61.3 GW), and the 2025 curve much
+    flatter (load factor 79.3% / 78.7% against 64.1% in 2024).
+  - **Peak definition.** The RUPTL average node peaks do not model the
+    coincidence between provinces or systems (they are at or slightly
+    below the sum of their peaks), so the 2025 node peaks may be
+    slightly high. The published system load factors of the power
+    balance are not on one basis: net peak in most systems, gross peak
+    in Jawa-Bali, Lombok and Timor.
+- **Power balance covers the main grid systems only.** Smaller isolated
+  systems are not included, so the eastern nodes are much lower than
+  with the provincial data: `IDN_MAL` 659 GWh against 2,379 GWh,
+  `IDN_NUS` 3,119 against 5,264, `IDN_PAP` 1,872 against 2,669 (the
+  Timor alternative case with PLTU Kupang Baru is excluded from
+  `IDN_NUS`). `IDN_JAW` is higher (251,145 against 241,435 GWh).
+- **`IDN_BTM` in the power-balance option mixes bases**: PT PLN Batam
+  is energy consumption (Statistik PLN has no production by unit in
+  this file), Kepulauan Riau is RUPTL production, and the node peak is
+  the sum of the two non-coincident peaks (load factor 58.6%, lower
+  than the 70.7% of Kepulauan Riau and the 67.1% published for PT PLN
+  Batam).
+- **Node definitions of `IDN_BTM` and `IDN_SUM` change in 2025.** In
+  2017–2024 (`Grid_Node_Energy_GWh`), `IDN_BTM` is PT PLN Batam only,
+  and Kepulauan Riau outside Batam is in `IDN_SUM` (it is part of the
+  PLN unit "UID Riau dan Kepulauan Riau", not separable in the energy
+  balance). In 2025, `IDN_BTM` is the whole of Kepulauan Riau and
+  `IDN_SUM` excludes it, as in the RUPTL. About 1.2 TWh (2% of
+  `IDN_SUM`, 21% of `IDN_BTM`) moves from `IDN_SUM` to `IDN_BTM`
+  between 2024 and 2025, so `IDN_BTM` jumps (4.1 TWh and 787 MW in
+  2024; 5.4 TWh and 1,047 MW in 2025 with the power balance, 5.7 TWh
+  and 921 MW with the provincial data).
+- **PT PLN Batam in 2025 is not a RUPTL value**: Statistik PLN energy
+  consumption and peak (power balance), or PLN energy consumption × the
+  national RUPTL production / sales ratio with the Kepulauan Riau load
+  factor (provincial data).
 - **The PLN node peaks** (`Grid_Node_Peak_MW`) are not used: they are
   sums of non-coincident unit peaks.
+
+Future improvements:
+
+- **Use the RUPTL node targets for the other historical years too**, or
+  bring 2017–2024 onto the same basis as 2025 (node production and
+  load factor rather than national on-grid generation and HEESI peak),
+  so that the energy level, the peak and the shape do not break between
+  2024 and 2025. Statistik PLN node data (`Grid_Node_Netto_GWh` for
+  energy) could serve for 2017–2024.
+- **Align the node definitions of `IDN_BTM` and `IDN_SUM` in
+  2017–2024** with 2025: move Kepulauan Riau outside Batam from
+  `IDN_SUM` to `IDN_BTM` in `Grid_Node_Energy_GWh`, so that `IDN_BTM`
+  is the whole of Kepulauan Riau in every year (e.g., with the
+  Kepulauan Riau sub-rows of "UID Riau dan Kepulauan Riau" in
+  Statistik PLN). Then replace the estimate of PT PLN Batam in 2025 by
+  a published value.
+- **Coincident node peaks.** Replace the RUPTL average node peaks by
+  coincident peaks (e.g., from hourly provincial profiles or a
+  historical coincidence factor).
 
 The nodes are `IDN_JAW` (Jawa-Bali), `IDN_SUM` (Sumatera), `IDN_BTM`
 (Batam-Riau Islands), `IDN_KAL` (Kalimantan), `IDN_SUL` (Sulawesi),
@@ -688,7 +838,7 @@ future files, because they are built from the last historical value.
 | **THA** | EGAT (regions from EGAT 2023–2024 shares) | NSO shares; IIASA × NSO 2025 shares | Ember × EGAT 2025 shares for regions | EPPO PDP2024 2026–2037, then IIASA growth | New Year, Songkran |
 | **MYS** | GSO (Peninsula); eStatistik × GSO shape (Sabah, Sarawak) | (TBC) | (TBC) | (TBC) | (TBC) |
 | **VNM** | NSMO (by region) | (TBC) | (TBC) | (TBC) | (TBC) |
-| **IDN** | Synthetic: 2017 node shapes fitted to HEESI peak load and on-grid generation, split by PLN node energy | (TBC) | PLN node energy consumption, 2017–2025 only (other years to be added) | RUPTL 2026–2034, then IIASA growth | (TBC) |
+| **IDN** | Synthetic: 2017 node shapes fitted to HEESI peak load and on-grid generation, split by PLN node energy (2017–2024); fitted to RUPTL node production and peak (2025) | (TBC) | PLN node energy consumption, 2017–2025 only (other years to be added) | RUPTL 2026–2034, then IIASA growth | (TBC) |
 
 ---
 

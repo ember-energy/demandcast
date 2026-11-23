@@ -50,6 +50,9 @@ Description:
        The base profile of Indonesia is the sum of the base node
        profiles (load factor of about 78% in every year).
 
+    Steps 4 and 5 apply to 2017-2024. 2025 (RUPTL_TARGET_YEARS) is
+    fitted node by node to the RUPTL instead (step 4b).
+
     4. National target. The national peak load P and on-grid
        generation E (NATIONAL_TARGETS) set the target load factor
        LF = E / (P x hours). The base profile of Indonesia is divided by
@@ -75,6 +78,41 @@ Description:
        daily and weekly pattern; the node peaks are not targeted and
        result from the fitting.
 
+    4b. Node targets (2025, RUPTL_TARGET_YEARS). Each node has its own
+       production E_node, load factor and average peak load
+       P_node = E_node x 1000 / (load factor x 8,760) from the RUPTL
+       2025-2034 (sheets "By_grid_node", read by
+       socio_economic_data_sources/pln_ruptl.py, and
+       get_ruptl_node_targets). The base profile of each node is
+       reshaped to them as in step 4, with its own exponent:
+           node(h) = P_node x (base_node(h) / max base_node) ** k_node
+       so that the peak of the node is P_node and its energy E_node.
+       There is no national target and no breakdown into nodes:
+       Indonesia is the sum of the nodes. Two options
+       (RUPTL_TARGET_OPTION):
+       - "power_balance" ("Using power balance", default): the RUPTL
+         power-balance demand of the main grid systems summed by node
+         (RUPTL_2025-2034_Grid_System_Power_Balance_nodes.xlsx, scenario
+         RE Base, the same as ARED in 2025). IDN_BTM has no power-balance
+         table, so it is Kepulauan Riau without Batam island (RUPTL
+         provincial file: 1,171 GWh, 189 MW) + PT PLN Batam (Statistik
+         PLN 2025, BATAM_FILE_PATH: energy consumption 4,201 GWh, peak
+         858 MW); the productions and the peaks are added (5,372 GWh,
+         1,047 MW, load factor 58.6%). In 2025, Indonesia is 353.1 TWh,
+         with a peak of 50.8 GW (sum of the node peaks 51.1 GW).
+       - "provincial" ("Using provincial data"): the RUPTL provincial
+         demand tables summed by node
+         (RUPTL_2025-2034_Provincial_Demand_1_2.xlsx). The row of IDN_BTM
+         is Kepulauan Riau without Batam island; with ADD_BATAM_TO_BTM,
+         PT PLN Batam is added (PLN energy consumption x the RUPTL
+         production / sales ratio of Indonesia, 1.079, with the load
+         factor of Kepulauan Riau). Indonesia is then 353.1 TWh with a
+         peak of 51.2 GW (348.6 TWh and 50.5 GW without Batam).
+       In both options, IDN_BTM is the whole of Kepulauan Riau and
+       IDN_SUM excludes it in 2025, while in 2017-2024
+       (Grid_Node_Energy_GWh) IDN_BTM is PT PLN Batam only and Kepulauan
+       Riau outside Batam is in IDN_SUM (see README_data_methodology.md).
+
     National targets (NATIONAL_TARGETS):
     - On-grid generation: "Total On Grid" of HEESI 2025 section 6.4.2A
       (PLN production and PLN purchases from captive power and IPP),
@@ -89,15 +127,20 @@ Description:
     With these targets, the load factors equal the published load
     factors over 8,760 hours in 2017-2024 (over the actual number of
     hours, they are about 0.2 percentage points lower in the leap years
-    2020 and 2024). In 2025, the load factor is 61.3% against 62.2%
-    published, because of the new classification. The 2025 values are
-    unaudited.
+    2020 and 2024). The 2025 row is not used (see step 4b).
 
     Notes and limitations:
-    - The profiles are at the level of on-grid generation, so their
+    - 2017-2024 are at the level of on-grid generation (HEESI), so their
       annual energy is about 12-15% higher than the energy consumption
-      of Grid_Node_Energy_GWh (it includes losses and own use). The
-      same basis is used for all the years.
+      of Grid_Node_Energy_GWh (it includes losses and own use). 2025 is
+      at the level of the RUPTL provincial production (mainly sales plus
+      distribution losses, about 4% below the system production in
+      Jawa-Bali), so the basis of the energy and of the peak changes
+      between 2024 and 2025 (see README_data_methodology.md).
+    - The 2023-2024 national peaks (HEESI, including the generation
+      subsidiaries) are much higher than the 2025 peak from the RUPTL
+      (61.3 GW in 2024 against 50.8 GW in 2025, power-balance option), and the 2023-2024
+      curves much peakier (load factor of about 62% against 79%).
     - All the years reuse the 2017 shapes, so the peak is always on the
       same weekday and hour (a Monday in late October, 18:00-19:00
       local time, for IDN). Changes in the daily pattern over time
@@ -107,7 +150,10 @@ Description:
       load is small compared with the major holidays.
     - From 2023, the published peak includes the generation
       subsidiaries, so the peak increases by about 40% between 2022 and
-      2023 and the curves of 2023-2025 are much peakier (k of about 2).
+      2023 and the curves of 2023-2024 are much peakier (k of about 2).
+    - The RUPTL average node peaks do not model the coincidence between
+      provinces (they are at or slightly below the sum of the provincial
+      peaks), so the 2025 node peaks may be slightly too high.
     - Four nodes (IDN_BTM, IDN_NUS, IDN_MAL, IDN_PAP) share the same
       2017 shape and differ only in scale.
     - All the nodes use the time zone Asia/Jakarta (esdm.yaml), while
@@ -129,6 +175,9 @@ Description:
     - PLN Statistics / ESDM Pusdatin, electricity sales by customer
       group and region, 2017-2024 (average energy shares of the nodes,
       get_average_energy_shares)
+    - PT PLN (Persero), RUPTL 2025-2034, provincial projections of sales,
+      production and peak load, and power balance of the grid systems
+      (Chapter V.5.7) (2025 node targets)
 """
 
 import functools
@@ -216,6 +265,46 @@ NATIONAL_TARGETS = pandas.DataFrame(
     },
     index=pandas.Index(range(2017, 2026), name="year"),
 )
+
+# Define the years whose profiles are fitted node by node to the targets
+# of the RUPTL 2025-2034 (production, load factor and average peak load
+# of each node, sheet "By_grid_node" of pln_ruptl.FILE_PATH), instead of
+# the national targets (NATIONAL_TARGETS, not used for these years). The
+# national profile is then the sum of the nodes.
+RUPTL_TARGET_YEARS = [2025]
+
+# Define the number of hours per year used by the RUPTL sheet to derive
+# the average node peak load from the production and the load factor.
+RUPTL_HOURS_PER_YEAR = 8760
+
+# Define the source of the RUPTL node targets (get_ruptl_node_targets):
+# - "provincial" ("Using provincial data"): the RUPTL provincial demand
+#   tables summed by node (pln_ruptl.FILE_PATH);
+# - "power_balance" ("Using power balance"): the RUPTL power-balance
+#   demand of the grid systems summed by node
+#   (pln_ruptl.POWER_BALANCE_FILE_PATH), for all the nodes but IDN_BTM,
+#   which is not in the power balance (see BATAM_FILE_PATH).
+RUPTL_TARGET_OPTION = "provincial"
+
+# Provincial option: the RUPTL row of IDN_BTM is PLN Kepulauan Riau
+# without Batam island (supplied by PT PLN Batam, not in the RUPTL).
+# Define whether an estimate of PT PLN Batam is added to it. If False,
+# IDN_BTM is the RUPTL row of Kepulauan Riau only.
+ADD_BATAM_TO_BTM = True
+BTM_CODE = "IDN_BTM"
+
+# Power-balance option: define the file with the energy consumption
+# (Grid_Node_Energy_GWh) and peak load (Grid_Node_Peak_MW) of PT PLN
+# Batam (IDN_BTM in these tabs), from Statistik PLN. IDN_BTM is
+# Kepulauan Riau without Batam (production and average peak load of the
+# RUPTL provincial file) + PT PLN Batam (energy consumption and peak
+# load of Statistik PLN).
+BATAM_FILE_PATH = ENERGY_FILE_PATH # Indonesia_PLN_Peak_Energy_LoadFactor_2017-2025.xlsx
+BATAM_ENERGY_SHEET_NAME = "Grid_Node_Netto_GWh"
+BATAM_PEAK_SHEET_NAME = "Grid_Node_Peak_MW"
+BATAM_ENERGY_HEADER_ROW = 4     #Head of Block A ("Grid node", years)
+BATAM_ENERGY_ROWS = 8           # the 8 nodes of block A (block B is double-counted)
+
 
 # Define the tolerance and maximum number of iterations of the
 # iterative proportional fitting of the node profiles.
@@ -388,27 +477,35 @@ def read_load_shapes() -> pandas.DataFrame:
     return shapes
 
 
-@functools.lru_cache(maxsize=1)
-def read_annual_energy() -> pandas.DataFrame:
+@functools.lru_cache(maxsize=None)
+def read_node_sheet(file_path: str, sheet_name: str, header : int = 3, nrows: int | None = None) -> pandas.DataFrame:
     """
-    Read the annual energy consumption of each grid node.
+    Read an annual table of the grid nodes from a Statistik PLN file.
+
+    The table header (node code, node name, years) is on the fourth
+    row, and the node codes are the codes of the subdivisions.
+
+    Parameters
+    ----------
+    file_path : str
+        The Excel file (e.g., ENERGY_FILE_PATH).
+    sheet_name : str
+        The sheet (e.g., Grid_Node_Energy_GWh).
 
     Returns
     -------
     pandas.DataFrame
-        The annual energy consumption in GWh, with the years as index
-        and the codes of the subdivisions as columns.
+        The values, with the years as index and the codes of the
+        subdivisions as columns.
     """
-    table = pandas.read_excel(
-        ENERGY_FILE_PATH, sheet_name=ENERGY_SHEET_NAME, header=3
-    )
+    table = pandas.read_excel(file_path, sheet_name=sheet_name, header=header, nrows = nrows)
     node_column = table.columns[0]
     node_codes = list(CODES_OF_NODES.values())
     table = table[table[node_column].isin(node_codes)].set_index(node_column)
 
     missing_nodes = set(node_codes) - set(table.index)
     if missing_nodes:
-        raise ValueError(f"Nodes missing in {ENERGY_SHEET_NAME}: {missing_nodes}.")
+        raise ValueError(f"Nodes missing in {sheet_name}: {missing_nodes}.")
 
     # Keep the year columns (read as 2017 or 2017.0).
     year_columns = {
@@ -424,7 +521,23 @@ def read_annual_energy() -> pandas.DataFrame:
     )
     table.index.name = "year"
     table.columns.name = None
+
+    if table.index.duplicated().any():
+        raise ValueError(f"Duplicated nodes in {sheet_name}.")
     return table
+
+
+def read_annual_energy() -> pandas.DataFrame:
+    """
+    Read the annual energy consumption of each grid node.
+
+    Returns
+    -------
+    pandas.DataFrame
+        The annual energy consumption in GWh, with the years as index
+        and the codes of the subdivisions as columns.
+    """
+    return read_node_sheet(ENERGY_FILE_PATH, ENERGY_SHEET_NAME)
 
 
 def _get_holiday_days(year: int) -> dict[pandas.Timestamp, tuple[str, int]]:
@@ -668,6 +781,125 @@ def _fit_to_targets(
     return fitted
 
 
+def get_ruptl_node_targets(year: int) -> pandas.DataFrame:
+    """
+    Get the annual targets of the grid nodes from the RUPTL.
+
+    The production (GWh), load factor and average peak load (MW) of each
+    node come from the sheet "By_grid_node" of a RUPTL file (pln_ruptl),
+    depending on RUPTL_TARGET_OPTION:
+
+    - "provincial" ("Using provincial data"): the RUPTL provincial
+      demand tables summed by node (pln_ruptl.FILE_PATH), used as they
+      are. The row of IDN_BTM is PLN Kepulauan Riau without Batam
+      island, which is supplied by PT PLN Batam and is not in the RUPTL.
+      If ADD_BATAM_TO_BTM is True, an estimate of PT PLN Batam is added
+      to IDN_BTM: its PLN energy consumption in the year
+      (read_annual_energy) times the ratio of the RUPTL production to
+      the RUPTL sales of Indonesia, with the load factor of Kepulauan
+      Riau.
+    - "power_balance" ("Using power balance"): the RUPTL power-balance
+      demand of the main grid systems summed by node
+      (pln_ruptl.POWER_BALANCE_FILE_PATH, scenario
+      pln_ruptl.POWER_BALANCE_SCENARIO), for all the nodes but IDN_BTM,
+      which has no power-balance table. IDN_BTM is Kepulauan Riau
+      without Batam (production and average peak load of the RUPTL
+      provincial file) + PT PLN Batam (energy consumption and peak load
+      of Statistik PLN, BATAM_FILE_PATH): the productions and the peaks
+      are added, and the load factor follows from them.
+
+    In both options, the average peak load is production x 1000 /
+    (load factor x RUPTL_HOURS_PER_YEAR), as in the RUPTL sheets.
+
+    Parameters
+    ----------
+    year : int
+        The year of interest (2025-2034; 2017-2025 for PT PLN Batam).
+
+    Returns
+    -------
+    pandas.DataFrame
+        The production (GWh), load factor and peak load (MW) of each
+        node, with the codes of the nodes as index.
+
+    Raises
+    ------
+    ValueError
+        If RUPTL_TARGET_OPTION is not a known option.
+    """
+    # Import here, as pln_ruptl imports this module.
+    from retrievals.socio_economic_data_sources import pln_ruptl
+
+    def read_targets(**kwargs) -> pandas.DataFrame:
+        # Read the production, load factor and average peak load of the
+        # nodes in the year from a RUPTL file.
+        return pandas.DataFrame(
+            {
+                "production": pln_ruptl.read_node_table(
+                    pln_ruptl.PRODUCTION_TABLE_TITLE, **kwargs
+                )[year],
+                "load_factor": pln_ruptl.read_node_table(
+                    pln_ruptl.LOAD_FACTOR_TABLE_TITLE, additive=False, **kwargs
+                )[year],
+                "peak_load": pln_ruptl.read_node_table(
+                    pln_ruptl.PEAK_TABLE_TITLE, additive=False, **kwargs
+                )[year],
+            }
+        )
+
+    node_codes = list(CODES_OF_NODES.values())
+    provincial = read_targets()
+
+    if RUPTL_TARGET_OPTION == "provincial":
+        targets = provincial
+        if ADD_BATAM_TO_BTM:
+            # Add PT PLN Batam: its PLN net production (Grid_Node_Netto_GWh, block A), with the load
+            # factor of Kepulauan Riau (so that of the node is unchanged).
+            batam_energy = read_node_sheet(
+                BATAM_FILE_PATH, BATAM_ENERGY_SHEET_NAME,
+                header = BATAM_ENERGY_HEADER_ROW, nrows = BATAM_ENERGY_ROWS
+            )
+            
+            targets.loc[BTM_CODE, "production"] += batam_energy.loc[year, BTM_CODE]
+            targets.loc[BTM_CODE, "peak_load"] = (
+                targets.loc[BTM_CODE, "production"]
+                * 1000
+                / (targets.loc[BTM_CODE, "load_factor"] * RUPTL_HOURS_PER_YEAR)
+            )
+        return targets.loc[node_codes]
+
+    if RUPTL_TARGET_OPTION == "power_balance":
+        targets = read_targets(
+            file_path=pln_ruptl.POWER_BALANCE_FILE_PATH,
+            block=pln_ruptl.POWER_BALANCE_SCENARIO,
+            allow_missing=(BTM_CODE,),
+        )
+
+        # IDN_BTM: Kepulauan Riau without Batam (RUPTL provincial) +
+        # PT PLN Batam (Statistik PLN). Add the productions and the
+        # peaks, and derive the load factor.
+        batam_energy = read_node_sheet(BATAM_FILE_PATH, BATAM_ENERGY_SHEET_NAME, header = BATAM_ENERGY_HEADER_ROW, nrows = BATAM_ENERGY_ROWS)
+        batam_peak = read_node_sheet(BATAM_FILE_PATH, BATAM_PEAK_SHEET_NAME)
+        targets.loc[BTM_CODE, "production"] = (
+            provincial.loc[BTM_CODE, "production"]
+            + batam_energy.loc[year, BTM_CODE]
+        )
+        targets.loc[BTM_CODE, "peak_load"] = (
+            provincial.loc[BTM_CODE, "peak_load"] + batam_peak.loc[year, BTM_CODE]
+        )
+        targets.loc[BTM_CODE, "load_factor"] = (
+            targets.loc[BTM_CODE, "production"]
+            * 1000
+            / (targets.loc[BTM_CODE, "peak_load"] * RUPTL_HOURS_PER_YEAR)
+        )
+        return targets.loc[node_codes]
+
+    raise ValueError(
+        f"Unknown RUPTL_TARGET_OPTION {RUPTL_TARGET_OPTION!r}: use "
+        "'provincial' or 'power_balance'."
+    )
+
+
 @functools.lru_cache(maxsize=1)
 def get_demands() -> pandas.DataFrame:
     """
@@ -704,6 +936,42 @@ def get_demands() -> pandas.DataFrame:
 
     demand_of_years = []
     for year, base_of_year in base.groupby(base.index.year):
+        if year in RUPTL_TARGET_YEARS:
+            # Reshape the base profile of each node to its own RUPTL
+            # peak load and production (load factor over the actual
+            # number of hours of the year). No national target and no
+            # split into the nodes: Indonesia is the sum of the nodes.
+            targets = get_ruptl_node_targets(year)
+            fitted = {}
+            exponents = {}
+            for code in node_codes:
+                peak_load = targets.loc[code, "peak_load"]
+                load_factor = (
+                    targets.loc[code, "production"]
+                    * 1000
+                    / (peak_load * len(base_of_year))
+                )
+                node_shape = base_of_year[code].to_numpy()
+                node_shape = node_shape / node_shape.max()
+                exponents[code] = _solve_exponent(node_shape, load_factor)
+                fitted[code] = peak_load * node_shape ** exponents[code]
+
+            demand_of_year = pandas.DataFrame(
+                fitted, index=base_of_year.index, columns=node_codes
+            )
+            demand_of_year.insert(0, "IDN", demand_of_year.sum(axis=1))
+            demand_of_years.append(demand_of_year)
+
+            logging.info(
+                f"IDN {year} (RUPTL node targets): node exponents "
+                + ", ".join(f"{code} {k:.3f}" for code, k in exponents.items())
+                + f"; peak {demand_of_year['IDN'].max():.0f} MW (sum of node "
+                f"peaks {targets['peak_load'].sum():.0f} MW), load factor "
+                f"{demand_of_year['IDN'].mean() / demand_of_year['IDN'].max():.4f}, "
+                f"energy {demand_of_year['IDN'].sum() / 1e6:.1f} TWh."
+            )
+            continue
+
         if year not in NATIONAL_TARGETS.index or year not in energy.index:
             logging.warning(f"Skipping {year}: no national or node energy data.")
             continue
