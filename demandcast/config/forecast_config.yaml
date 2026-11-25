@@ -2,5 +2,22 @@
 
 # OPTIONAL.
 # The machine learning algorithm to be used for forecasting.
-model_path: "D:/Modelling/demandcast/demandcast/ml_models/trained/xgboost_model_20261112_204743.json"
-data_path: "D:/Modelling/demandcast/demandcast/data/assembled/20261112/assembled_data_for_forecasting_20261112_204208.parquet"
+model_path: "D:/Modelling/demandcast/demandcast/ml_models/trained/xgboost_model_20261124_180518.json"
+data_path: "D:/Modelling/demandcast/demandcast/data/assembled/20261124/assembled_data_for_forecasting_20261124_180626.parquet"
+
+# OPTIONAL. (default: BASE)
+# EMA scenario of the projected peak load of Singapore: BASE (Base EDF)
+# or UPPER (Upper-bound EDF). If set, the forecasted load of SGP in each
+# complete year of 2026-2034 is reshaped so that its peak is the EMA
+# projected peak, keeping its annual energy. The annual energy must be
+# the EMA generation of the same scenario (assembled with
+# scenario_for_annual_electricity_demand_per_capita: EMA-<BASE|UPPER>-...),
+# otherwise an error is raised. null: no adjustment.
+scenario_for_peak_load_sgp: BASE
+
+# OPTIONAL (default: true).
+# Whether to reshape the forecasted load of Vietnam and its regions
+# (VNM, VNM_NOR, VNM_CEN, VNM_SOU) in each complete year of 2026-2045 so
+# that its maximum is the Pmax, its minimum the Pmin, and its annual
+# energy the produced electricity of the PDP VIII of the MOIT.
+adjust_load_to_pdp8: true

@@ -90,7 +90,7 @@ the shape of the profile from it.
 
 | Code | Source | Module | Coverage | Method |
 |---|---|---|---|---|
-| `PHL`, `PHL_LU`, `PHL_VI`, `PHL_MI` | National Grid Corporation of the Philippines (NGCP) | [`ngcp.py`](../retrievals/electricity_demand_data_sources/ngcp.py) | 2013 – 2024 | Measured demand of each grid. `PHL` is the sum of the three grids. |
+| `PHL`, `PHL_LU`, `PHL_VI`, `PHL_MI` | National Grid Corporation of the Philippines (NGCP) | [`ngcp.py`](../retrievals/electricity_demand_data_sources/ngcp.py) | 2013 – 2025 | Measured demand of each grid. `PHL` is the sum of the three grids. |
 | `SGP` | Energy Market Authority (EMA) | [`ema.py`](../retrievals/electricity_demand_data_sources/ema.py) | 6 Jan 2014 – today, half-hourly | Measured system demand, downloaded in one-week requests. |
 | `THA` | Electricity Generating Authority of Thailand (EGAT) | [`egat.py`](../retrievals/electricity_demand_data_sources/egat.py) | 1 Jul 2024 – today | Measured national demand from the EGAT API. |
 | `THA_CEN`, `THA_NOR`, `THA_NEA`, `THA_SOU` | EGAT (derived) | [`egat.py`](../retrievals/electricity_demand_data_sources/egat.py) | 1 Jul 2024 – today | National demand × regional share (see below). |
@@ -98,6 +98,10 @@ the shape of the profile from it.
 | `MYS_SAB`, `MYS_SAR` | DOSM eStatistik + GSO (synthetic) | [`estatistik.py`](../retrievals/electricity_demand_data_sources/estatistik.py) | Monthly totals | Peninsular shape × monthly consumption (see below). |
 | `VNM`, `VNM_NOR`, `VNM_CEN`, `VNM_SOU` | National Power System and Market Operator (NSMO) | [`nsmo.py`](../retrievals/electricity_demand_data_sources/nsmo.py) | Sep 2022 – Dec 2025, half-hourly | Measured demand of each region, from monthly files downloaded manually. |
 | `IDN` and 8 grid nodes | 2017 Indonesian load shapes + PLN/HEESI statistics, and RUPTL for 2025 (synthetic) | [`esdm.py`](../retrievals/electricity_demand_data_sources/esdm.py) | 2017 – 2025, hourly | 2017–2024: 2017 node shapes fitted to the national peak load and on-grid generation, split into nodes by energy share. 2025: each node fitted to its own RUPTL production and peak load, from the power balance (default) or the provincial data (see below). |
+
+#### Philippines regions (NGCP)
+
+NGCP publishes the hourly demand profile of the national ("PHL") and three main grids: Luzon ("PHL_LU"), Visayas ("PHL_VI") or Mindanao ("PHL_MI"). The data is downloadable from Jan 1 2013 to today's date. 
 
 #### Thailand regions (EGAT)
 
@@ -112,7 +116,7 @@ The shares come from the EGAT regional demand of 2023 and 2024
 `socio_economic_data_sources/manual_downloads`), downloaded from a [dataset collected from EGAT](https://zenodo.org/records/17109911): the share of each
 region is calculated for each hour, and averaged over the two years at
 the same month, day and hour. Metropolitan and Central are combined
-into `THA_CEN`.
+into `THA_CEN` in the dataset.
 
 `egat.get_annual_energy_shares(2025)` gives each region's share of
 annual energy. The year is set by `SHARE_YEAR = 2025` in
@@ -136,8 +140,14 @@ The 2025 shares are used in two places (Section 5.5):
    afterwards;
 2. to **split the historical national demand** of Ember into the
    regions, with the same 2025 share for every historical year.
+   
+#### Malaysia 
+##### Malaysian Peninsular (GSO)
 
-#### Sabah and Sarawak (eStatistik)
+GSO publishes the 10-minute demand profile of the Malaysian Peninsular ("MYS_PEN"). The data is downloadable from 2020-01-01 to today's date. The hourly demand profile is resampled.  
+
+
+##### Malaysian Sabah and Sarawak (eStatistik)
 
 No hourly data is published for Sabah and Sarawak grid in Malaysia, so a synthetic profile
 is built:
@@ -174,19 +184,20 @@ statistics of each year, 2017–2025. The inputs are in
 | Input | File / source | Used for |
 |---|---|---|
 | Hourly load shape by node, 2017 | `Indonesia_Load_Shapes_Peaks_GridNodes.xlsx`, tab `Load_Shape_pu` (from the RUPTL-based *Indonesia Load Profile-AEO* workbook) | Shape of the curves |
-| Energy consumption by node | `Indonesia_PLN_Peak_Energy_LoadFactor_2017-2025.xlsx`, tab `Grid_Node_Energy_GWh` (Statistik PLN, Table 2) | Split of the energy between nodes |
+| Net production by node | `Indonesia_PLN_Peak_Energy_LoadFactor_2017-2025.xlsx`, tab `Grid_Node_Netto_GWh`, block A (Statistik PLN net production minus energy received from other PLN units, counted once) | Base profiles and split of the energy between nodes |
 | National on-grid generation | ESDM Handbook of Energy & Economic Statistics of Indonesia 2025 (HEESI 2025), section 6.4.2A | Annual energy of `IDN`, 2017–2024 |
-| National peak load | HEESI 2025, section 6.4.8 (Statistik PLN, Table 1, for 2018, 2020, 2022) | Annual peak of `IDN`, 2017–2024 |
+| National peak load | HEESI 2025, section 6.4.6; Statistik PLN, Table 1, for 2018, 2020, 2022 | Annual peak of `IDN`, 2017–2024 |
 | Production, load factor and average peak load by node (option "Using power balance", default) | `RUPTL_2025-2034_Grid_System_Power_Balance_nodes.xlsx`, tab `By_grid_node` (RUPTL 2025–2034 power balance of the main grid systems, Chapter V.5.7, scenario RE Base; read by [`pln_ruptl.py`](../retrievals/socio_economic_data_sources/pln_ruptl.py)) | Annual energy and peak of each node but `IDN_BTM`, 2025 |
-| Production, load factor and average peak load by node (option "Using provincial data") | `RUPTL_2025-2034_Provincial_Demand_1_2.xlsx`, tab `By_grid_node` (RUPTL 2025–2034 provincial tables) | Annual energy and peak of each node, 2025; Kepulauan Riau in `IDN_BTM` for both options |
+| Production, load factor and average peak load by node (option "Using provincial data") | `RUPTL_2025-2034_Provincial_Demand_1_2.xlsx`, tab `By_grid_node` (RUPTL 2025–2034 provincial tables) | Annual energy and peak of each node, 2025; Kepulauan Riau in `IDN_BTM` only |
 | PT PLN Batam energy consumption and peak load | `Indonesia_PLN_Peak_Energy_LoadFactor_2017-2025_1.xlsx`, tabs `Grid_Node_Energy_GWh` and `Grid_Node_Peak_MW` (Statistik PLN 2025) | Batam in `IDN_BTM`, 2025, power-balance option |
 
-The method, for each year:
+##### Hourly profile development for historical years:
 
 1. **Load shapes.** Read the 2017 hourly shape of each node: 8,736
    hours (52 weeks from Sunday 1 January to Saturday 30 December 2017),
    in per unit of the node's own annual peak, in local time.
-2. **Calendar alignment.** Map the 2017 shape onto the calendar of the
+2. **Calendar alignment.** Since demand profile depends on the day of the week and holidays, we cannot immediately use the shape of 2017 on other historical years without aligning.
+  Map the 2017 shape onto the calendar of the
    year so that holidays fall on their dates of that year, which match
    the holiday indicators of `assemble.py`:
    - **Holidays** take the 2017 day of the same holiday (names from the
@@ -196,7 +207,7 @@ The method, for each year:
      (`HOLIDAY_WINDOWS`). These days keep their offset from the
      holiday, not their weekday. For example, the Lebaran of 31 March
      2025 takes the Lebaran of 25 June 2017.
-   - **Other days** take the 2017 day with the same weekday and the
+   - **Other non-holidays** take the 2017 day with the same weekday and the
      closest day of the year (a shift of −3 to +3 days for the whole
      year). If that day is a 2017 holiday (or in its window), or falls
      outside the 364 days of the shape, the same weekday in the closest
@@ -204,8 +215,9 @@ The method, for each year:
      takes 18 December 2017 (Monday) rather than Christmas Day.
    - Holidays of the year that are not in 2017 (election days, Easter
      Sunday from 2024) are treated as normal days.
-3. **Base profiles.** Scale the shape of each node to its annual energy
-   consumption: `base_node(h) = E_node × shape(h) / Σ shape`. The base
+3. **Base profiles.** Scale the shape of each node to its annual net
+   production (`Grid_Node_Netto_GWh`, block A):
+   `base_node(h) = E_node × shape(h) / Σ shape`. The base
    profile of `IDN` is the sum of the nodes (load factor ≈ 78%).
 4. **National target (2017–2024).** The peak load `P` and on-grid
    generation `E` set the target load factor `LF = E / (P × hours)`. The base `IDN`
@@ -233,40 +245,37 @@ The method, for each year:
 5. **Breakdown into nodes (2017–2024).** Split the national target
    into the nodes by iterative proportional fitting of the base node
    profiles, so that the nodes add up to `IDN` in every hour, and each
-   node's annual energy is its share of the node energy consumption ×
-   `E`. Node peaks are not targeted; they result from the fitting.
+   node's annual energy is its share of the node net production ×
+   `E`. 
+   
+6. **2025: node targets from the RUPTL.** 
 
-**2025: node targets from the RUPTL.** For 2025 (`RUPTL_TARGET_YEARS`
-in `esdm.py`), steps 4 and 5 are replaced by a fit of each node to its
-own targets: the production `E_node`, the load factor
-(production-weighted), and the average peak load
-`P_node = E_node × 1000 / (load factor × 8,760)`. The base profile of
-each node is reshaped as in step 4, with its own exponent:
+  For 2025 (`RUPTL_TARGET_YEARS`
+  in `esdm.py`), steps 4 and 5 are replaced by a fit of each node to its
+  own targets: the production `E_node`, the load factor
+  (production-weighted), and the average peak load
+  `P_node = E_node × 1000 / (load factor × 8,760)`. The base profile of
+  each node is reshaped as in step 4, with its own exponent:
 
-```
-node(h) = P_node × (base_node(h) / max base_node) ^ k_node
-```
+  ```
+  node(h) = P_node × (base_node(h) / max base_node) ^ k_node
+  ```
 
-so that the node's peak is exactly `P_node` and its energy `E_node`.
-There is no national target and no breakdown into nodes: `IDN` is the
-sum of the nodes.
+  so that the node's peak is exactly `P_node` and its energy `E_node`.
 
-The targets come from one of two options (`RUPTL_TARGET_OPTION` in
-`esdm.py`, `get_ruptl_node_targets`). Both are kept in
-`data/electricity_demand`: `2026-11-20` (power balance),
-`2026-11-20_provincial_data_batam` and
-`2026-11-20_provincial_data_wo_batam` (provincial data, with and
-without Batam), each with a summary `IDN_esdm_2025_node_summary.xlsx`.
+  There are two options for `P_node` and `E_node`: *Using power balance* and *Using provincial demand*. 
+  For DC studies, we choose *Using power balance* as default because we need to account for annual generation including losses and self-use. 
 
-*Option "Using power balance"* (`"power_balance"`, default). The
-targets are the RUPTL power-balance demand of the **main grid systems**
-(Chapter V.5.7), summed by node in the `By_grid_node` tab of
-`RUPTL_2025-2034_Grid_System_Power_Balance_nodes.xlsx` (scenario RE
-Base; ARED is the same in 2025). The node load factor is the
-production-weighted average of the published system load factors.
-`IDN_BTM` has no power-balance table (the Batam / Riau Islands system
-is not covered), so it is built from two parts, whose productions and
-peaks are added:
+  *Option "Using power balance"* (`"power_balance"`, default). The
+  targets are the RUPTL power-balance demand of the **main grid systems**
+  (Chapter V.5.7), summed by node in the `By_grid_node` tab of
+  `RUPTL_2025-2034_Grid_System_Power_Balance_nodes.xlsx` (scenario RE
+  Base and ARED are the same in 2025). The node load factor is the
+  production-weighted average of the published system load factors.
+  
+  `IDN_BTM` has no power-balance table (the Batam / Riau Islands system
+  is not covered), so it is built from two parts, whose productions and
+  peaks are added:
 
 - **Kepulauan Riau without Batam island**: production and average peak
   load of the RUPTL provincial file (1,171 GWh, 189 MW);
@@ -274,27 +283,28 @@ peaks are added:
   2025 (`Indonesia_PLN_Peak_Energy_LoadFactor_2017-2025_1.xlsx`,
   4,201 GWh, 858 MW).
 
-| Node | Production (GWh) | Load factor | Peak (MW) | `k_node` | Systems |
-|---|---|---|---|---|---|
-| `IDN_JAW` | 251,145 | 81.8% | 35,048 | 0.86 | 1 |
-| `IDN_SUM` | 53,083 | 73.9% | 8,200 | 1.17 | 1 |
-| `IDN_KAL` | 17,965 | 73.9% | 2,773 | 0.88 | 2 |
-| `IDN_SUL` | 19,839 | 71.8% | 3,156 | 1.21 | 2 |
-| `IDN_BTM` (Kepulauan Riau + PT PLN Batam) | 5,372 | 58.6% | 1,047 | 1.37 | – |
-| `IDN_NUS` | 3,119 | 72.0% | 494 | 0.83 | 2 |
-| `IDN_MAL` | 659 | 73.1% | 103 | 0.79 | 2 |
-| `IDN_PAP` | 1,872 | 72.4% | 295 | 0.82 | 6 |
-| **`IDN`** (sum) | **353,054** | **79.3%** | **50,809** (sum of node peaks 51,118) | – | |
+The summary for 2025 demand profiles (Using power balance) is:
+| Node | Production (GWh) | Load factor | Peak (MW) | `k_node` | 
+|---|---|---|---|---|
+| `IDN_JAW` | 251,145 | 81.8% | 35,048 | 0.86 | 
+| `IDN_SUM` | 53,083 | 73.9% | 8,200 | 1.17 | 
+| `IDN_KAL` | 17,965 | 73.9% | 2,773 | 0.88 | 
+| `IDN_SUL` | 19,839 | 71.8% | 3,156 | 1.21 | 
+| `IDN_BTM` (Kepulauan Riau + PT PLN Batam) | 5,372 | 58.6% | 1,047 | 1.37 | 
+| `IDN_NUS` | 3,119 | 72.0% | 494 | 0.83 |
+| `IDN_MAL` | 659 | 73.1% | 103 | 0.79 | 
+| `IDN_PAP` | 1,872 | 72.4% | 295 | 0.82 | 
+| **`IDN`** (sum) | **353,054** | **79.3%** | **50,809** (sum of node peaks 51,118) |
 
-*Option "Using provincial data"* (`"provincial"`). The targets are the
-RUPTL provincial demand tables, summed by node in the `By_grid_node`
-tab of `RUPTL_2025-2034_Provincial_Demand_1_2.xlsx`. The node load
-factor is the production-weighted average of the provincial load
-factors implied by the RUPTL production and peaks. The RUPTL row of
-`IDN_BTM` is **PLN Kepulauan Riau without Batam island**: Batam is
-supplied by PT PLN Batam, which is not in the RUPTL. With
-`ADD_BATAM_TO_BTM = True`, PT PLN Batam is added to `IDN_BTM`, so that
-it covers the whole of Kepulauan Riau in 2025:
+  *Option "Using provincial data"* (`"provincial"`). The targets are the
+  UPTL provincial demand tables, summed by node in the `By_grid_node`
+  tab of `RUPTL_2025-2034_Provincial_Demand_1_2.xlsx`. The node load
+  factor is the production-weighted average of the provincial load
+  factors implied by the RUPTL production and peaks. The RUPTL row of
+  `IDN_BTM` is **PLN Kepulauan Riau without Batam island**: Batam is
+  supplied by PT PLN Batam, which is not in the RUPTL. With
+  `ADD_BATAM_TO_BTM = True`, PT PLN Batam is added to `IDN_BTM`, so that
+  it covers the whole of Kepulauan Riau in 2025:
 
 - **Production**: RUPTL Kepulauan Riau (1,171 GWh) + PT PLN Batam, whose
   production is its PLN energy consumption in 2025 (4,201 GWh) × the
@@ -307,6 +317,7 @@ All the other nodes, including `IDN_SUM`, are the RUPTL rows as they
 are. With `ADD_BATAM_TO_BTM = False`, `IDN_BTM` is the RUPTL row only
 (1,171 GWh, 189 MW, without Batam island).
 
+The summary for 2025 demand profiles (Using provincial demand) is:
 | Node | Production (GWh) | Load factor | Peak (MW) | `k_node` |
 |---|---|---|---|---|
 | `IDN_JAW` | 241,435 | 81.7% | 33,733 | 0.87 |
@@ -321,26 +332,21 @@ are. With `ADD_BATAM_TO_BTM = False`, `IDN_BTM` is the RUPTL row only
 
 Choice of targets:
 
-- **On-grid generation** is the "Total On Grid" of HEESI section 6.4.2A
-  (PLN production + PLN purchases from captive power and IPP). 2025
-  follows a new classification by power-plant ownership (section
-  6.4.2B), so it is PLN sub total (190,970 GWh) + PLN purchase from
-  IPP, captive power and PPU (158,913 GWh).
-- **Peak load** is the HEESI section 6.4.8 value, except in 2018, 2020
+- **On-grid generation** (2017 - 2024) : the "Total On Grid" of HEESI section 6.4.2A
+  (PLN production + PLN purchases from captive power and IPP). 
+- **On-grid generation** (2025): RUPTL (2025 - 2034), depending on *Using power balance* or *Using provincial demand*.
+- **Peak load** (2017 - 2024): HEESI section 6.4.8 values, except in 2018, 2020
   and 2022, where the HEESI peak and load factor do not match the
   on-grid generation (by −5.7%, +4.2% and +2.4%). The Statistik PLN
   peaks are used for these years: with the published load factors,
   they reproduce the on-grid generation.
 - With these targets, the load factors equal the published values over
   8,760 hours in 2017–2024 (about 0.2 points lower over the actual
-  hours of the leap years 2020 and 2024). The HEESI values of 2025
-  (349,883 GWh, 65,134 MW) are kept in `NATIONAL_TARGETS` but not used.
+  hours of the leap years 2020 and 2024). \
+- **Peak load** (2025): RUPTL (2025 - 2034)
 
 Data caveats:
 
-- **Generation level, not consumption (2017–2024).** The profiles
-  include losses and own use: their energy is about 12–15% above the
-  PLN energy consumption of the nodes.
 - **2023 break.** From 2023 the published peak includes the generation
   subsidiaries: the peak rises by about 40% between 2022 and 2023 and
   the 2023–2024 curves are much peakier (`k` ≈ 2, with night-time load
@@ -377,7 +383,7 @@ Data caveats:
   than the 70.7% of Kepulauan Riau and the 67.1% published for PT PLN
   Batam).
 - **Node definitions of `IDN_BTM` and `IDN_SUM` change in 2025.** In
-  2017–2024 (`Grid_Node_Energy_GWh`), `IDN_BTM` is PT PLN Batam only,
+  2017–2024 (`Grid_Node_Netto_GWh`), `IDN_BTM` is PT PLN Batam only,
   and Kepulauan Riau outside Batam is in `IDN_SUM` (it is part of the
   PLN unit "UID Riau dan Kepulauan Riau", not separable in the energy
   balance). In 2025, `IDN_BTM` is the whole of Kepulauan Riau and
@@ -390,27 +396,10 @@ Data caveats:
   consumption and peak (power balance), or PLN energy consumption × the
   national RUPTL production / sales ratio with the Kepulauan Riau load
   factor (provincial data).
-- **The PLN node peaks** (`Grid_Node_Peak_MW`) are not used: they are
-  sums of non-coincident unit peaks.
 
 Future improvements:
 
-- **Use the RUPTL node targets for the other historical years too**, or
-  bring 2017–2024 onto the same basis as 2025 (node production and
-  load factor rather than national on-grid generation and HEESI peak),
-  so that the energy level, the peak and the shape do not break between
-  2024 and 2025. Statistik PLN node data (`Grid_Node_Netto_GWh` for
-  energy) could serve for 2017–2024.
-- **Align the node definitions of `IDN_BTM` and `IDN_SUM` in
-  2017–2024** with 2025: move Kepulauan Riau outside Batam from
-  `IDN_SUM` to `IDN_BTM` in `Grid_Node_Energy_GWh`, so that `IDN_BTM`
-  is the whole of Kepulauan Riau in every year (e.g., with the
-  Kepulauan Riau sub-rows of "UID Riau dan Kepulauan Riau" in
-  Statistik PLN). Then replace the estimate of PT PLN Batam in 2025 by
-  a published value.
-- **Coincident node peaks.** Replace the RUPTL average node peaks by
-  coincident peaks (e.g., from hourly provincial profiles or a
-  historical coincidence factor).
+- Work on the targets annual net production and peak load based on PLN Statistiks for year 2017 - 2024 and fix the provincial divisions
 
 The nodes are `IDN_JAW` (Jawa-Bali), `IDN_SUM` (Sumatera), `IDN_BTM`
 (Batam-Riau Islands), `IDN_KAL` (Kalimantan), `IDN_SUL` (Sulawesi),
@@ -516,8 +505,7 @@ whichever one is available:
 - **Ember**
   ([`ember.py`](../retrievals/socio_economic_data_sources/ember.py)):
   total electricity demand (TWh, the "Demand" row of the yearly global
-  dataset) divided by the World Bank population. Since July 2026, Ember
-  no longer publishes demand per capita directly, so it is calculated.
+  dataset) divided by the World Bank population.
 - **World Bank**
   ([`world_bank.py`](../retrievals/socio_economic_data_sources/world_bank.py)):
   electric power consumption per capita (`EG.USE.ELEC.KH.PC`).
@@ -537,7 +525,7 @@ mapped to countries in
 All six countries covered here are in **`R5.2ASIA`**, so they share the
 same growth rates.
 
-Scenarios: `SSP1-Baseline` to `SSP5-60` (default scenario is `SSP2-Baseline`).
+Default scenario: `SSP2-Baseline`. See `get_iamc_scenarios` on `annual_electricity_demand_per_capita.py` for full lists
 
 ### 5.3 Philippines
 
@@ -587,9 +575,33 @@ Scenarios: `EMA-<BASE|UPPER>-<IAMC scenario>`, for example
 `EMA-BASE-SSP2-45`. The SSP in the name (here `SSP2`) also sets the
 population used as denominator.
 
+**Peak load of the forecast.** The same EMA paper gives the
+projected system peak demand, Table 1a (page 4), in GW to one decimal,
+for 2025–2034 and the same two scenarios. With
+`scenario_for_peak_load: BASE` or `UPPER` in `forecast_config.yaml`,
+`forecast.py` reshapes the forecasted load of `SGP` in each complete
+local year of 2026–2034 so that its peak is the EMA projected peak,
+keeping its annual energy (`utils.time_series.reshape_to_peak`):
+
+```
+load'(h) = P_EMA × (load(h) / max load) ^ k
+```
+
+`k` is chosen so that the annual energy is unchanged; the timing of the
+peak and of the daily and weekly patterns is kept. Plain scaling by
+`P_EMA / max load` is not used, as it would change the annual energy
+(the EMA generation). Before reshaping, the annual energy of `SGP` must
+be the EMA generation of the **same scenario** (Table 1b, within
+0.05%): if the peak is `BASE` and the energy is the `UPPER` generation
+(or not an EMA generation at all, e.g., an IIASA-only scenario or a
+different SSP for the population), `forecast.py` stops with an error.
+Years outside 2026–2034 and partial years are not adjusted. The load
+before the adjustment is kept in the column `Forecast Load before peak
+adjustment (MW)`.
+
 ### 5.5 Thailand
 
-| | National (`THA`) | Regions |
+| | National (`THA`) | Grid nodes |
 |---|---|---|
 | Historical | Default (Ember/World Bank average) | Ember national demand (TWh) × EGAT 2025 energy share of the region / regional population |
 | Future, 2026–2037 | EPPO national demand / projected population | EPPO regional demand (calibrated to EGAT) / projected regional population |
@@ -620,9 +632,9 @@ trend afterwards. The national projection is not changed.
 Scenarios: `EPPO-<IAMC scenario>`, for example `EPPO-SSP2-Baseline` (Default). The SSP
 also sets the population used as denominator.
 
-### 5.6 Malaysia and Viet Nam (To be updated)
+### 5.6 Malaysia (To be updated)
 
-Default method for the countries. Subdivisions use the national value
+Default method for the country. Subdivisions use the national value
 (Section 5.1), and the future follows the IIASA `R5.2ASIA` growth rates.
 
 ### 5.7 Indonesia
@@ -631,7 +643,7 @@ Default method for the countries. Subdivisions use the national value
 > currently available for **2017 – 2025 only**. Other years will be
 > added later.
 
-| | National (`IDN`) | Grid nodes (`IDN_SUM`, `IDN_BTM`, `IDN_JAW`, `IDN_KAL`, `IDN_SUL`, `IDN_NUS`, `IDN_MAL`, `IDN_PAP`) |
+| | National (`IDN`) | Grid nodes |
 |---|---|---|
 | Historical, 2017–2025 | Sum of the PLN node energy consumption / World Bank population | PLN energy consumption of the node / node population (World Bank × BPS share) |
 | Historical, other years | Not available yet | Not available yet |
@@ -656,7 +668,7 @@ Default method for the countries. Subdivisions use the national value
 > the RUPTL in 2026 would create a large drop. The PLN energy
 > consumption (313.6 TWh in 2025) is on the same basis as the RUPTL.
 
-> **Note: step between 2025 and 2026 (kept as is).** The RUPTL sales of
+> **Note: step between 2025 and 2026.** The RUPTL sales of
 > 2025 (323.0 TWh) are about 3% higher than the PLN energy consumption
 > of 2025 (313.6 TWh). The national demand therefore rises by **8.4%**
 > from 2025 (PLN, 313.6 TWh) to 2026 (RUPTL, 340.0 TWh), against 5.2% of
@@ -683,6 +695,74 @@ Default method for the countries. Subdivisions use the national value
   share (about 1.4%), and the other nodes are rescaled so that the
   national total is unchanged. Set `HOLD_HISTORICAL_BTM_SHARE_UNTIL =
   None` in `pln_ruptl.py` to use the RUPTL node values as they are.
+
+Scenarios: the IAMC scenarios, for example `SSP2-Baseline`. The SSP
+also sets the population used as denominator.
+
+### 5.8 Viet Nam
+
+| | National (`VNM`) | Grid_nodes |
+|---|---|---|
+| Historical | Default (Ember only) | National value (default) |
+| Future, last historical year + 1 to 2025 | Last historical value × IIASA growth rates | Same, from the national value |
+| Future, 2026–2045 | PDP VIII produced electricity of Viet Nam × 10⁶ / projected population | PDP VIII produced electricity of the region × 10⁶ / projected regional population |
+| Future, 2046 onwards | 2045 value × IIASA growth rates of `VNM` | 2045 value of the region × IIASA growth rates of `VNM` |
+
+- **PDP VIII**
+  ([`moit_vietnam.py`](../retrievals/socio_economic_data_sources/moit_vietnam.py)):
+  annual series (from row 25) of tab `Shares & produced` of
+  `manual_downloads/moit/PDP8_2023_base_case_demand_interpolated.xlsx`,
+  built from the PDP VIII explanatory report of the Institute of Energy
+  (base load scenario), with 2030 set to the lower bound of the revised
+  PDP VIII (2025). The regions of the file are mapped to the model codes
+  with tab `Grid_code_mapping`.
+  - National produced electricity (Điện sản xuất), Pmax and Pmin are
+    published for 2025, 2030, 2035, 2040 and 2045 (Table 6.5) and
+    interpolated with the Table 6.4 growth rates for the other years.
+  - Regional produced electricity = national value × regional share of
+    commercial electricity (Điện thương phẩm, Table 6.6). The regions
+    add up to the national value.
+  - Regional Pmax and Pmin are **calculated, not published**: from the
+    regional produced electricity with the national load factor and
+    Pmin/Pmax ratio. The national Pmax and Pmin used in the model are
+    the sums of the regions (equal to Table 6.5, within 0.1%).
+- The projected population is that of `retrievals.population` (IIASA
+  SSP; gridded shares of the IIASA national population for the
+  regions), so the assembled annual demand of each entity equals the
+  PDP VIII value when the same SSP is used for the population.
+
+> **Note: step between 2025 and 2026 (kept as is).** The PDP VIII
+> produced electricity of 2025 (378.6 TWh) is higher than the Ember
+> demand of 2025, so the demand per capita (SSP2) steps up from 2025 to
+> 2026:
+>
+> | Entity | 2025, Ember (kWh) | 2026, PDP VIII (kWh) | Change |
+> |---|---|---|---|
+> | `VNM` | 3,319 | 4,118 | +24% |
+> | `VNM_NOR` | 3,319 | 4,076 | +23% |
+> | `VNM_CEN` | 3,319 | 3,153 | −5% |
+> | `VNM_SOU` | 3,319 | 4,468 | +35% |
+
+**Load of the forecast.** With `adjust_load_to_pdp8: true` in
+`forecast_config.yaml` (default), `forecast.py` reshapes the forecasted
+load of `VNM`, `VNM_NOR`, `VNM_CEN` and `VNM_SOU` in each complete
+local year of 2026–2045 so that its maximum is the PDP VIII Pmax, its
+minimum the PDP VIII Pmin, and its annual energy the PDP VIII produced
+electricity (`utils.time_series.reshape_to_peak_and_minimum`):
+
+```
+s(h)     = (load(h) − min load) / (max load − min load)
+load'(h) = Pmin + (Pmax − Pmin) × s(h) ^ k
+```
+
+`k` is chosen so that the annual energy is the PDP VIII value; the
+timing of the peak, of the minimum and of the daily and weekly patterns
+is kept. If the annual energy of the forecast differs from the PDP VIII
+value by more than 1% (e.g., a different SSP for the population), a
+warning is logged and the load is still scaled to the PDP VIII value.
+Years outside 2026–2045 and partial years are not adjusted. The load
+before the adjustment is kept in the column `Forecast Load before peak
+adjustment (MW)`.
 
 Scenarios: the IAMC scenarios, for example `SSP2-Baseline`. The SSP
 also sets the population used as denominator.
@@ -753,9 +833,42 @@ Country-specific major holidays (To be updated for other countries):
 | PHL | Holy Week (Maundy Thursday, Good Friday, Black Saturday); 24 Dec – 1 Jan |
 | SGP | Chinese New Year (both days and any observed day), plus the eve and the day after, when load is still 7–13% lower than usual |
 | THA | New Year (29 Dec – 3 Jan) and Songkran (12 – 17 Apr), when load drops by 15–35%, against about 10% on a normal Sunday |
+| VNM | Tet and Hung Kings Commemoration Day (see below); the official days off of New Year, Reunification Day, Labour Day and National Day, with their observed (substitute) days (`holidays` package, training and forecasting); the bridge days off ("Day off (substituted from …)") are other holidays |
+| IDN | Lebaran (Idul Fitri, both days), with the collective leave and "mudik" days before and after it, Christmas (24 - 26 Dec) and New Year (1 - 2 Jan)|
 
-Other countries have no major holidays defined, so all their holidays
-are "other holidays".
+Tet and the Hung Kings Commemoration Day of `VNM` depend on the target
+use of the assembled data:
+
+- **Training (historical data):** the official days off of the
+  `holidays` package (`training_names` in `MAJOR_HOLIDAYS`, matched on
+  the English names): Tet from "29 of Lunar New Year" (when it is a day
+  off) or the eve to the 4th or 5th day, and Hung Kings with its
+  observed (substitute) day.
+- **Forecasting (future data, no official days off yet):** periods of
+  the Vietnamese lunar calendar (`forecasting_lunar_periods`): Tet from
+  lunar 26/12 to 5/1 (9 or 10 days, depending on whether the 12th lunar
+  month has 29 or 30 days) and Hung Kings on lunar 10/3. They are
+  converted with
+  [`utils/vietnamese_lunar_calendar.py`](../utils/vietnamese_lunar_calendar.py)
+  (Hồ Ngọc Đức's algorithm, new moons computed for UTC+7), which can
+  differ by a day from the Chinese calendar (e.g., the Lunar New Year of
+  2030 is on 2 February in Viet Nam, against 3 February in China) and
+  matches the Lunar New Year and Hung Kings dates of the `holidays`
+  package for 1950–2099.
+
+With these definitions, the other holidays of `VNM` are the bridge
+days off swapped with a working day ("Day off (substituted from …)",
+e.g., 31 Dec 2018, 29 Apr 2019 and 29 Apr 2024) and, in forecasting,
+the Hung Kings substitute days of the `holidays` package (e.g., 27 Apr
+2026). The days off
+of New Year, Reunification Day, Labour Day and National Day in future
+years follow the rules of the `holidays` package (fixed dates and
+substitute days), without the bridge days, which are announced each
+year.
+
+Other countries (`MYS`, `IDN` apart from the holidays in
+`MAJOR_HOLIDAYS`) have no or few major holidays defined; all their other
+holidays are "other holidays".
 
 Every entity to be modelled must be listed under `categorical_values`
 → `Entity code` in [`config/ml_config.yaml`](../config/ml_config.yaml).
@@ -837,8 +950,8 @@ future files, because they are built from the last historical value.
 | **SGP** | EMA | Default | Default | EMA 2026–2034, then IIASA growth | Chinese New Year ± 1 day |
 | **THA** | EGAT (regions from EGAT 2023–2024 shares) | NSO shares; IIASA × NSO 2025 shares | Ember × EGAT 2025 shares for regions | EPPO PDP2024 2026–2037, then IIASA growth | New Year, Songkran |
 | **MYS** | GSO (Peninsula); eStatistik × GSO shape (Sabah, Sarawak) | (TBC) | (TBC) | (TBC) | (TBC) |
-| **VNM** | NSMO (by region) | (TBC) | (TBC) | (TBC) | (TBC) |
-| **IDN** | Synthetic: 2017 node shapes fitted to HEESI peak load and on-grid generation, split by PLN node energy (2017–2024); fitted to RUPTL node production and peak (2025) | (TBC) | PLN node energy consumption, 2017–2025 only (other years to be added) | RUPTL 2026–2034, then IIASA growth | (TBC) |
+| **VNM** | NSMO (by region) | Default | Default (Ember only; national value for regions) | MOIT PDP VIII 2026–2045, then IIASA growth; forecast reshaped to PDP VIII Pmax, Pmin and energy | Tet and Hung Kings (official days off for training, lunar periods for forecasting); official days off of New Year, Reunification Day, Labour Day and National Day |
+| **IDN** | Synthetic: 2017 node shapes fitted to HEESI peak load and on-grid generation, split by PLN node net production (2017–2024); fitted to RUPTL node production and peak (2025) | Default | PLN node energy consumption, 2017–2025 only (other years to be added) | RUPTL 2026–2034, then IIASA growth | Lebaran (Idul Fitri, both days), with the collective leave and "mudik" days before and after it, Christmas (24 - 26 Dec) and New Year (1 - 2 Jan) |
 
 ---
 
@@ -849,9 +962,12 @@ future files, because they are built from the last historical value.
 - **Indonesia steps up between 2025 and 2026.** The national demand
   rises by 8.4% (5.2% within the RUPTL), because the RUPTL 2025 sales
   are about 3% above the PLN 2025 energy consumption (see Section 5.7).
-- **Subdivisions of MYS and VNM share the national demand per
-  capita.** Differences in total energy between their subdivisions come
-  only from population.
+- **Subdivisions of MYS share the national demand per capita**, as do
+  those of VNM in the historical years. Differences in total energy
+  between them come only from population.
+- **Viet Nam steps up between 2025 and 2026.** The demand per capita
+  rises by about 24% from Ember (2025) to the PDP VIII (2026), with
+  different steps by region (see Section 5.8).
 - **Shared IIASA growth rates.** All six countries are in `R5.2ASIA`,
   so the default future growth of demand per capita is the same for all
   of them.

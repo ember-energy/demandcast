@@ -3,14 +3,16 @@
 # REQUIRED.
 # The target use for which the data is being assembled. It can be
 # 'training' or 'forecasting'.
-target_use: training
+target_use: forecasting
 
 # OPTIONAL.
 # The path to the yaml file containing the list of codes of the
 # countries and subdivisions of interest.
 file: "D:/Modelling/demandcast/demandcast/config/target_subnationals_config.yaml"
+
 #"D:/Modelling/demandcast/demandcast/config/target_subnationals_config.yaml"
 #D:/Modelling/demandcast/demandcast/config/target_countries_config.yaml
+
 # OPTIONAL.
 # Start year for a range of years of data to be assembled.
 start_year: 2030

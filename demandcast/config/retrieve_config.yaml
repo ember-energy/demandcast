@@ -11,7 +11,7 @@
 
 # - gdp_ppp_per_capita,
 # - temperature.
-variable: annual_electricity_demand_per_capita
+variable: population
 
 
 # OPTIONAL - REQUIRED for electricity_demand variable.
@@ -45,13 +45,8 @@ end_year: 2030
 # Scenario of the data to be retrieved.
 # Specify for future years, or else it will download all the available scenarios
 # it is painful to run everything
-scenario: SSP2-BASELINE
+scenario: SSP2 #SSP2-Baseline
 #Philippines (PHL and its grids): population scenarios PSA1, PSA2, PSA3 (PSA projections); annual_electricity_demand_per_capita scenarios PEP-REF-PSA1..3 and PEP-CES-PSA1..3 (PEP sales x grid-load factor / PSA population).
-#Scenario SPP1-2.6 is the sustainability pathway, but less aggressive than SSP1-1.9. Setting this as default scenario
-#Scenario SSP1-26 for annual_electricity_demand_per_capita
-#Scenario SSP1 for population, gdp/ppp per capita
-#Scenario SSP1-2.6 for gridded_weather
-#Details about the scenarios: https://www.climatehubs.usda.gov/hubs/northwest/topic/what-are-climate-model-phases-and-scenarios#:~:text=How%20do%20shared%20socioeconomic%20pathways,Description
 
 # OPTIONAL.
 # Variable of the weather data to be retrieved (only "temperature" is

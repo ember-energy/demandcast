@@ -23,6 +23,7 @@ import retrievals.population
 import retrievals.temperature
 import utils.config
 import utils.entities
+import utils.vietnamese_lunar_calendar
 from pydantic import BaseModel, ValidationError
 from tqdm import tqdm
 
@@ -739,7 +740,13 @@ def _merge_datasets(
 # stops for several days. They are given by the names of the holidays
 # in the holidays package, and by periods of dates (month, day) that
 # include days that are not official holidays. All other public
-# holidays of a country are other holidays.
+# holidays of a country are other holidays. Optional keys:
+# - "language": the language of the names of the holidays package;
+# - "days_before" and "days_after": days added around the named
+#   holidays;
+# - "training_names": names used only when assembling data for training;
+# - "forecasting_lunar_periods": periods of the Vietnamese lunar
+#   calendar used only when assembling data for forecasting.
 MAJOR_HOLIDAYS = {
     "PHL": {
         # Holy Week.
@@ -774,10 +781,42 @@ MAJOR_HOLIDAYS = {
         "days_before":6,
         "days_after":2,
     },
+    "VNM": {
+        # New Year, Reunification Day, Labour Day and National Day: the
+        # official days off of the holidays package (English names, see
+        # "language"), for training and forecasting. They include the
+        # observed (substitute) days, e.g., "National Day (observed)".
+        # The days off swapped with a working day to bridge a holiday,
+        # e.g., "Day off (substituted from 05/04/2024)" on 29 Apr 2024,
+        # are other holidays. These holidays have fixed dates, so their
+        # days off are also known for future years (by the rules of the
+        # holidays package, without the bridge days).
+        "names": [
+            "New Year's Day",
+            "Reunification Day",
+            "International Labor Day",
+            "National Day",
+        ],
+        "periods": [],
+        # Tet and the Hung Kings Commemoration Day:
+        # - training (historical data): the official days off of the
+        #   holidays package, by their English names ("language"), i.e.,
+        #   Tet from "29 of Lunar New Year" or the eve to the 4th or 5th
+        #   day, and Hung Kings with its observed (substitute) day;
+        # - forecasting (future data, no official days off yet): periods
+        #   of the Vietnamese lunar calendar (lunar month, lunar day),
+        #   see utils.vietnamese_lunar_calendar: Tet (26/12 - 5/1, from
+        #   the end of the previous lunar year) and Hung Kings (10/3).
+        "language": "en_US",
+        "training_names": ["Lunar New Year", "Hung Kings"],
+        "forecasting_lunar_periods": [((12, 26), (1, 5)), ((3, 10), (3, 10))],
+    },
 }
 
 
-def _get_holiday_indicators(partition: pandas.DataFrame) -> pandas.DataFrame:
+def _get_holiday_indicators(
+    partition: pandas.DataFrame, target_use: str
+) -> pandas.DataFrame:
     """
     Get the local major and other holiday indicators of a partition.
 
@@ -785,6 +824,10 @@ def _get_holiday_indicators(partition: pandas.DataFrame) -> pandas.DataFrame:
     ----------
     partition : pandas.DataFrame
         Partition with the "Time (UTC)" and "Entity code" columns.
+    target_use : str
+        The target use of the data: 'training' or 'forecasting'. It
+        selects the "training_names" or the "forecasting_lunar_periods"
+        of MAJOR_HOLIDAYS.
 
     Returns
     -------
@@ -818,7 +861,9 @@ def _get_holiday_indicators(partition: pandas.DataFrame) -> pandas.DataFrame:
         years = sorted({date.year for date in local_dates})
         try:
             country_holidays = holidays.country_holidays(
-                country_code, years=years
+                country_code,
+                years=years,
+                language=MAJOR_HOLIDAYS.get(country_code, {}).get("language"),
             )
         except NotImplementedError:
             logging.warning(
@@ -828,11 +873,15 @@ def _get_holiday_indicators(partition: pandas.DataFrame) -> pandas.DataFrame:
             continue
 
         # Get the major holidays of the country, by name and by period.
+        # The "training_names" are added for training only.
         major = MAJOR_HOLIDAYS.get(country_code, {"names": [], "periods": []})
+        major_names = list(major["names"])
+        if target_use == "training":
+            major_names += major.get("training_names", [])
         major_dates = {
             date
             for date, name in country_holidays.items()
-            if any(major_name in name for major_name in major["names"])
+            if any(major_name in name for major_name in major_names)
         }
 
         #Extend the named major holidays by the days before and after them
@@ -863,6 +912,27 @@ def _get_holiday_indicators(partition: pandas.DataFrame) -> pandas.DataFrame:
                     ).date
                 )
 
+        # Add the periods of the lunar calendar, for forecasting only. A
+        # period whose end is before its start in the lunar year (e.g.,
+        # Tet, 26/12 - 5/1) ends in the next lunar year. The lunar years
+        # around the years of the data are covered, and only the local
+        # dates of the data are flagged.
+        lunar_periods = (
+            major.get("forecasting_lunar_periods", [])
+            if target_use == "forecasting"
+            else []
+        )
+        for (start_month, start_day), (end_month, end_day) in lunar_periods:
+            end_in_next_year = (end_month, end_day) < (start_month, start_day)
+            for lunar_year in range(years[0] - 1, years[-1] + 1):
+                start = utils.vietnamese_lunar_calendar.to_gregorian(
+                    lunar_year, start_month, start_day
+                )
+                end = utils.vietnamese_lunar_calendar.to_gregorian(
+                    lunar_year + end_in_next_year, end_month, end_day
+                )
+                major_dates.update(pandas.date_range(start, end).date)
+
         # Other holidays are the public holidays that are not major.
         other_dates = set(country_holidays.keys()) - major_dates
 
@@ -878,6 +948,7 @@ def _get_holiday_indicators(partition: pandas.DataFrame) -> pandas.DataFrame:
 
 def _add_holiday_indicators(
     merged_dataset: dask.dataframe.DataFrame,
+    target_use: str,
 ) -> dask.dataframe.DataFrame:
     """
     Add the local major and other holiday indicators.
@@ -891,6 +962,8 @@ def _add_holiday_indicators(
     ----------
     merged_dataset : dask.dataframe.DataFrame
         Dataset with the "Time (UTC)" and "Entity code" columns.
+    target_use : str
+        The target use of the data: 'training' or 'forecasting'.
 
     Returns
     -------
@@ -902,6 +975,7 @@ def _add_holiday_indicators(
 
     indicators = merged_dataset.map_partitions(
         _get_holiday_indicators,
+        target_use,
         meta={
             "Local major holiday indicator": "int64",
             "Local other holiday indicator": "int64",
@@ -1085,7 +1159,7 @@ def run_data_assemply(
     )
 
     # Add the local major and other holiday indicators.
-    merged_dataset = _add_holiday_indicators(merged_dataset)
+    merged_dataset = _add_holiday_indicators(merged_dataset, target_use)
 
     if target_use == "training":
         # Calculate load fraction for training data.

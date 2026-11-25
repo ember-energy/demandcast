@@ -15,28 +15,28 @@ entities:
   #   subdivision_code: SOU
   # - country_code: THA
   #   subdivision_code: NEA
-#   - country_code: VNM
-#     subdivision_code: CEN
-#   - country_code: VNM
-#     subdivision_code: NOR
-#   - country_code: VNM
-#     subdivision_code: SOU
-  - country_code: IDN
-    subdivision_code: BTM
-  - country_code: IDN
-    subdivision_code: JAW
-  - country_code: IDN
-    subdivision_code: SUM
-  - country_code: IDN
-    subdivision_code: KAL
-  - country_code: IDN
-    subdivision_code: SUL
-  - country_code: IDN
-    subdivision_code: NUS
-  - country_code: IDN
-    subdivision_code: MAL
-  - country_code: IDN
-    subdivision_code: PAP
+  - country_code: VNM
+    subdivision_code: CEN
+  - country_code: VNM
+    subdivision_code: NOR
+  - country_code: VNM
+    subdivision_code: SOU
+  # - country_code: IDN
+  #   subdivision_code: BTM
+  # - country_code: IDN
+  #   subdivision_code: JAW
+  # - country_code: IDN
+  #   subdivision_code: SUM
+  # - country_code: IDN
+  #   subdivision_code: KAL
+  # - country_code: IDN
+  #   subdivision_code: SUL
+  # - country_code: IDN
+  #   subdivision_code: NUS
+  # - country_code: IDN
+  #   subdivision_code: MAL
+  # - country_code: IDN
+  #   subdivision_code: PAP
 #   - country_code: MYS
 #     subdivision_code: PEN
 #   - country_code: MYS
